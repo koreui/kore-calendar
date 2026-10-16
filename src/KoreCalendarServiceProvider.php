@@ -5,6 +5,8 @@ namespace KoreUi\Calendar;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
+use KoreUi\Calendar\Overlays\EventForm;
+use Livewire\Livewire;
 
 class KoreCalendarServiceProvider extends ServiceProvider
 {
@@ -25,6 +27,10 @@ class KoreCalendarServiceProvider extends ServiceProvider
         // Las vistas que no son componentes (la de Livewire, parciales) van en
         // su propio namespace, que sí es exclusivo del paquete.
         $this->loadViewsFrom(__DIR__.'/../resources/views', 'kore-calendar');
+
+        // El formulario de evento es un overlay de kore-ui: lo abre el calendario
+        // con `kore:open` por este nombre, y el OverlayManager lo resuelve con él.
+        Livewire::component('kore-calendar-event-form', EventForm::class);
 
         Route::get('/vendor/kore-calendar/kore-calendar.js', function () {
             $bundle = __DIR__.'/../dist/kore-calendar.js';

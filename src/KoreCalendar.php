@@ -7,6 +7,8 @@ use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use KoreUi\Calendar\Concerns\ManagesEventForm;
+use KoreUi\Calendar\Concerns\UndoesChanges;
 use KoreUi\Calendar\Events\CalendarEvent;
 use KoreUi\Calendar\Events\EventCollector;
 use KoreUi\Calendar\Events\EventInstance;
@@ -65,12 +67,25 @@ use Throwable;
  * para la vista, el destino se vuelve a ajustar y validar, y solo entonces se
  * llama al hook de persistencia del consumidor (`persistMove`, `persistResize`,
  * `onDateSelect`), dentro de una transacción.
+ *
+ * Crear y editar (`->eventForm()`): seleccionar un rango abre el formulario de
+ * kore-ui (un overlay) y pulsar un evento abre el de edición. El formulario no
+ * guarda nada: devuelve los datos y el calendario, por el mismo camino de
+ * arriba, llama a `createEvent()`, `updateEvent()` o `deleteEvent()`.
+ *
+ * Deshacer (`->undoable()`): tras mover o redimensionar, un toast con «Deshacer»
+ * que repite el cambio al revés con el mismo hook de persistencia.
  */
 abstract class KoreCalendar extends Component
 {
     // toast() para los motivos de rechazo. Es el mismo trait que usa el DataTable
     // (WithBulkActions), así que el toast llega al mismo gestor del navegador.
     use InteractsWithFeedback;
+
+    // El formulario de evento (crear, editar, eliminar) y deshacer viven aparte por
+    // tamaño; usan las piezas de esta clase (koreFind, koreInstances, korePersist…).
+    use ManagesEventForm;
+    use UndoesChanges;
 
     #[Url(as: 'view', except: '')]
     public string $view = '';
@@ -108,6 +123,8 @@ abstract class KoreCalendar extends Component
     {
         $this->koreSettings = [];
         $this->koreViews = null;
+        $this->koreEventForm = false;
+        $this->koreUndoable = false;
         $this->configure();
     }
 
@@ -223,7 +240,10 @@ abstract class KoreCalendar extends Component
 
         event(new EventMoved(static::class, $original->event, $mutation));
 
-        return ['ok' => true, 'message' => $this->koreAnnounce('event_moved', $original->event, $mutation->startMarker, $mutation->allDay, $settings)];
+        $announcement = $this->koreAnnounce('event_moved', $original->event, $mutation->startMarker, $mutation->allDay, $settings);
+        $this->koreOfferUndo('move', $mutation, $announcement);
+
+        return ['ok' => true, 'message' => $announcement];
     }
 
     /**
@@ -273,7 +293,10 @@ abstract class KoreCalendar extends Component
             default => $mutation->endMarker,
         };
 
-        return ['ok' => true, 'message' => $this->koreAnnounce($fromStart ? 'event_resized_start' : 'event_resized', $original->event, $when, $mutation->allDay, $settings)];
+        $announcement = $this->koreAnnounce($fromStart ? 'event_resized_start' : 'event_resized', $original->event, $when, $mutation->allDay, $settings);
+        $this->koreOfferUndo('resize', $mutation, $announcement);
+
+        return ['ok' => true, 'message' => $announcement];
     }
 
     /**
@@ -353,8 +376,81 @@ abstract class KoreCalendar extends Component
         return 'Este calendario todavía no guarda los cambios: implementa persistResize() en '.static::class.'.';
     }
 
-    /** Se seleccionó un rango de fechas (ya ajustado y validado). Típicamente abre el formulario de un evento nuevo. */
-    protected function onDateSelect(Selection $selection): void {}
+    /**
+     * Se seleccionó un rango de fechas (ya ajustado y validado). Con `eventForm()` abre
+     * el formulario de un evento nuevo con ese rango (y el recurso donde se soltó);
+     * sin él no hace nada. Al sobrescribirlo, `parent::onDateSelect($selection)` conserva eso.
+     */
+    protected function onDateSelect(Selection $selection): void
+    {
+        if ($this->koreEventForm) {
+            $this->koreOpenCreateForm($selection);
+        }
+    }
+
+    /**
+     * Se pulsó un evento (clic o Intro; uno con `url` es un enlace y no llega aquí).
+     * Ya se resolvió entre los de la vista. Con `eventForm()` abre el formulario de
+     * edición, salvo en un evento con `editable: false`; sin él no hace nada.
+     *
+     * Sobrescribirlo hace los eventos pulsables sin necesidad de `eventForm()`:
+     * se pintan enfocables y este hook recibe el clic.
+     */
+    protected function onEventClick(CalendarEvent $event): void
+    {
+        if ($this->koreEventForm && $event->editable !== false) {
+            $this->koreOpenEditForm($event);
+
+            return;
+        }
+
+        $this->skipRender();
+    }
+
+    /**
+     * Crea el evento que el usuario escribió en el formulario. Mismo contrato y mismas
+     * garantías que `persistMove()`: se llama tras validar, dentro de una transacción;
+     * `null` o `true` aceptan y `false` o un texto rechazan con ese motivo.
+     *
+     * `$data`, ya limpio:
+     *   - `mode` ('create'), `id` (`null`), `title`, `allDay`, `color` (un token de kore-ui o `null`)
+     *   - `start`, `end`: hora de pared en la zona del calendario ('Y-m-d' o 'Y-m-d H:i:s'),
+     *     el fin EXCLUSIVO y `null` si el evento no tiene
+     *   - `startAt`, `endAt`: los mismos como instantes (`CarbonImmutable`), listos para guardar
+     *   - `resourceId` (el recurso o `null`) y `resourceIds` (la lista)
+     *
+     * Por defecto rechaza, explicando que falta implementarlo.
+     *
+     * @param  array<string, mixed>  $data
+     * @return bool|string|null
+     */
+    protected function createEvent(array $data)
+    {
+        return 'Este calendario todavía no crea eventos: implementa createEvent() en '.static::class.'.';
+    }
+
+    /**
+     * Guarda los cambios de un evento editado en el formulario. `$event` es el evento
+     * actual (el de `events()`); `$data` tiene la forma de `createEvent()`, con `mode`
+     * 'edit' y su `id`. Un evento con varios recursos conserva todos si no se toca el primero.
+     *
+     * @param  array<string, mixed>  $data
+     * @return bool|string|null
+     */
+    protected function updateEvent(CalendarEvent $event, array $data)
+    {
+        return 'Este calendario todavía no guarda los cambios de un evento: implementa updateEvent() en '.static::class.'.';
+    }
+
+    /**
+     * Elimina un evento, después de que el usuario lo confirmara en el formulario.
+     *
+     * @return bool|string|null
+     */
+    protected function deleteEvent(CalendarEvent $event)
+    {
+        return 'Este calendario todavía no elimina eventos: implementa deleteEvent() en '.static::class.'.';
+    }
 
     // ── Interacción (piezas) ────────────────────────────────────────────
 
@@ -379,7 +475,7 @@ abstract class KoreCalendar extends Component
     }
 
     /** @param  list<EventInstance>  $instances */
-    private static function koreFind(array $instances, string|int $id): ?EventInstance
+    protected static function koreFind(array $instances, string|int $id): ?EventInstance
     {
         // Como string: 1 y '1' son el mismo evento (el id viaja por JSON).
         foreach ($instances as $instance) {
@@ -651,6 +747,10 @@ abstract class KoreCalendar extends Component
             'view' => $view,
             'date' => $this->date !== '' ? $this->date : null,
             'timeline.row_start' => $this->timelineRow,
+            // Lo que se pulsa solo se ofrece si alguien lo va a recibir: el formulario
+            // o un `onEventClick()` propio. Un `->eventClick(false)` explícito gana.
+            'interaction.event_click' => $this->koreSettings['interaction.event_click']
+                ?? (config('kore-calendar.interaction.event_click') || $this->koreEventForm || $this->koreOverridesEventClick()),
         ]);
     }
 

@@ -1,3 +1,4 @@
+import { clickedEventId, keyedEventId } from './click.js';
 import { DAY, computeMove, computeResize, computeSelection, hitFrom } from './mutation.js';
 
 /**
@@ -17,6 +18,10 @@ import { DAY, computeMove, computeResize, computeSelection, hitFrom } from './mu
  * - Los destinos se describen con data-* en el HTML del servidor
  *   (data-kore-drop, data-date, data-origin, data-axis, data-resource), así que
  *   esto no sabe de vistas: mes, rejilla horaria, recursos y timeline son lo mismo.
+ * - Pulsar un evento (clic, o Intro con el teclado) es un viaje más:
+ *   `$wire.clickEvent(id)`. El servidor decide qué abre (el formulario, o lo que
+ *   haga el `onEventClick()` del consumidor). Solo si el evento lleva
+ *   `data-clickable`; uno con `href` navega solo.
  */
 export default function KoreCalendarInteraction(config = {}) {
     return {
@@ -126,7 +131,13 @@ export default function KoreCalendarInteraction(config = {}) {
             if (this._suppressClick) {
                 e.preventDefault();
                 e.stopPropagation();
+
+                return;
             }
+
+            // Con un evento agarrado con el teclado, un clic no es «abrir».
+            const id = this.keyboard ? null : clickedEventId(e.target);
+            if (id !== null) this.openEvent(id);
         },
 
         // ── Teclado ────────────────────────────────────────────────────
@@ -146,6 +157,15 @@ export default function KoreCalendarInteraction(config = {}) {
                     const ev = readEvent(eventEl);
                     this.keyboard = { event: ev, start: ev.start, end: ev.end, allDay: ev.allDay, resource: ev.resource };
                     this.say(this.describe(this.keyboard, 'grabbed'));
+
+                    return;
+                }
+
+                // Intro (o Espacio, si no se puede mover) sobre un evento pulsable.
+                const id = keyedEventId(e);
+                if (id !== null) {
+                    e.preventDefault();
+                    this.openEvent(id);
                 }
 
                 return;
@@ -186,6 +206,21 @@ export default function KoreCalendarInteraction(config = {}) {
         },
 
         // ── Servidor ───────────────────────────────────────────────────
+
+        /** Pulsar un evento: un viaje, y el servidor decide qué se abre. */
+        async openEvent(id) {
+            if (this.pending) return;
+
+            this.pending = true;
+
+            try {
+                await this.$wire.clickEvent(id);
+            } catch (e) {
+                // Un fallo de red: no se abrió nada, y no hay estado que deshacer.
+            } finally {
+                this.pending = false;
+            }
+        },
 
         async commit(target, g) {
             if (!target) {

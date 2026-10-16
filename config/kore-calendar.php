@@ -86,6 +86,7 @@ return [
         'event_overlap' => true,              // false: ningún evento se puede solapar con otro
         'all_day_maintain_duration' => false, // al pasar de día completo a con hora (o al revés), conservar la duración
         'resource_editable' => true,          // se puede cambiar un evento de recurso
+        'event_click' => false,               // los eventos se pueden pulsar (onEventClick). KoreCalendar lo activa solo con eventForm() o si se sobrescribe onEventClick()
         'valid_range' => [                    // límites de lo editable, 'YYYY-MM-DD' (el fin incluye ese día)
             'start' => null,
             'end' => null,
@@ -137,8 +138,8 @@ return [
         'kbd_cancelled' => 'Cancelado.',
         'toggle_group' => 'Mostrar u ocultar :group',
 
-        // Interacción: los motivos de rechazo salen en un toast; los éxitos solo se
-        // anuncian por aria-live, nunca en un toast.
+        // Interacción: los motivos de rechazo salen en un toast; los éxitos de mover y
+        // redimensionar solo se anuncian por aria-live (con `undoable()` también en un toast).
         'move_rejected' => 'No se pudo mover el evento',
         'resize_rejected' => 'No se pudo cambiar la duración del evento',
         'not_editable' => 'Este evento no se puede editar',
@@ -153,6 +154,58 @@ return [
         'event_moved' => '«:title» movido al :date',
         'event_resized' => '«:title» ahora termina :date',
         'event_resized_start' => '«:title» ahora empieza :date',
+
+        // Deshacer (`->undoable()`): un toast con la acción tras mover o redimensionar.
+        'undo' => 'Deshacer',
+        'undo_done' => 'Cambio deshecho',
+        'undo_failed' => 'No se pudo deshacer el cambio',
+
+        // Crear, editar y eliminar con el formulario (`->eventForm()`). Los fallos
+        // salen en un toast de error con el motivo; los éxitos, en uno de éxito.
+        'create_rejected' => 'No se pudo crear el evento',
+        'update_rejected' => 'No se pudo guardar el evento',
+        'delete_rejected' => 'No se pudo eliminar el evento',
+        'event_created' => '«:title» creado',
+        'event_updated' => '«:title» guardado',
+        'event_deleted' => '«:title» eliminado',
+
+        // El formulario de evento. «Todo el día» es `all_day`, la de arriba.
+        'form_create' => 'Nuevo evento',
+        'form_edit' => 'Editar evento',
+        'form_title' => 'Título',
+        'form_start_date' => 'Fecha de inicio',
+        'form_start_time' => 'Hora de inicio',
+        'form_end_date' => 'Fecha de fin',
+        'form_end_time' => 'Hora de fin',
+        'form_resource' => 'Recurso',
+        'form_color' => 'Color',
+        'form_pick_date' => 'Elige una fecha',
+        'form_pick_time' => 'Elige una hora',
+        'form_no_resource' => 'Sin recurso',
+        'form_no_color' => 'Sin color',
+        'form_save' => 'Guardar',
+        'form_cancel' => 'Cancelar',
+        'form_delete' => 'Eliminar',
+        'form_delete_confirm' => '¿Eliminar «:title»?',
+        'form_delete_description' => 'Esta acción no se puede deshacer.',
+        'form_required' => 'Este campo es obligatorio',
+        'form_invalid' => 'El valor no es válido',
+        'form_end_before_start' => 'El fin no puede ser anterior al inicio',
+
+        // Los colores del selector (tokens de kore-ui).
+        'color_primary' => 'Primario',
+        'color_success' => 'Éxito',
+        'color_warning' => 'Aviso',
+        'color_destructive' => 'Peligro',
+        'color_info' => 'Información',
+        'color_chart_1' => 'Paleta 1',
+        'color_chart_2' => 'Paleta 2',
+        'color_chart_3' => 'Paleta 3',
+        'color_chart_4' => 'Paleta 4',
+        'color_chart_5' => 'Paleta 5',
+        'color_chart_6' => 'Paleta 6',
+        'color_chart_7' => 'Paleta 7',
+        'color_chart_8' => 'Paleta 8',
     ],
 
 ];

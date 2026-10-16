@@ -52,6 +52,8 @@ final class CalendarSettings
         public readonly bool $resourceEditable = true,
         /** Lo editable, en markers y con fin exclusivo (el día siguiente al `end` del config). `null` = sin límites. */
         public readonly ?DateRange $validRange = null,
+        /** Los eventos se pueden pulsar (llega a `onEventClick()`): se pintan enfocables aunque el calendario no sea editable. */
+        public readonly bool $eventClick = false,
     ) {}
 
     /**
@@ -137,6 +139,7 @@ final class CalendarSettings
             allDayMaintainDuration: (bool) $get('interaction.all_day_maintain_duration', false),
             resourceEditable: (bool) $get('interaction.resource_editable', true),
             validRange: self::validRange($get('interaction.valid_range')),
+            eventClick: (bool) $get('interaction.event_click', false),
         );
     }
 
@@ -215,7 +218,7 @@ final class CalendarSettings
             $this->nowIndicator, $this->datesAboveResources, $this->defaultTimedSeconds,
             $this->defaultAllDayDays, $this->formats, $this->timelineSlot, $this->timelineRowStart, $this->timelineRowLimit, $this->timelineScrollTime,
             $this->editable, $this->selectable, $this->snapSeconds, $this->eventOverlap,
-            $this->allDayMaintainDuration, $this->resourceEditable, $this->validRange,
+            $this->allDayMaintainDuration, $this->resourceEditable, $this->validRange, $this->eventClick,
         );
     }
 

@@ -7,6 +7,10 @@
     Con `url` es un enlace. Si el calendario es editable y el evento se puede
     mover, es enfocable y lleva sus datos en data-* para KoreCalendarInteraction
     (Espacio para agarrarlo con el teclado). Si se puede redimensionar, lleva un asa.
+
+    Si el calendario tiene clic activo (eventForm() o un onEventClick() propio), un
+    evento sin `url` también es enfocable aunque no se pueda mover: lleva
+    data-clickable y Intro (o un clic) lo abre.
 --}}
 @props([
     'calendar',
@@ -27,6 +31,8 @@
     $showTime = ! $instance->allDay && $isStart;
     $tag = $event->url ? 'a' : 'div';
     $movable = \KoreUi\Calendar\Interaction\Editability::canMove($event, $calendar->settings);
+    // Un enlace ya hace lo suyo al pulsarlo: el clic del calendario es solo para los demás.
+    $clickable = $calendar->settings->eventClick && ! $event->url;
     // El asa va en el borde real del evento: un trozo que sigue en la semana
     // siguiente no se redimensiona desde aquí.
     $resizable = $display !== 'list-item' && $isEnd && \KoreUi\Calendar\Interaction\Editability::canResize($event, $calendar->settings);
@@ -40,7 +46,9 @@
     data-start="{{ $instance->range->start->ts }}"
     data-end="{{ $instance->range->end->ts }}"
     data-all-day="{{ $instance->allDay ? '1' : '0' }}"
-    @if ($movable) data-movable @unless ($event->url) tabindex="0" role="button" @endunless aria-describedby="kore-calendar-kbd-help" @endif
+    @if ($movable) data-movable aria-describedby="kore-calendar-kbd-help" @endif
+    @if ($clickable) data-clickable @endif
+    @if (($movable || $clickable) && ! $event->url) tabindex="0" role="button" @endif
     @if ($resizable) data-resizable @endif
     @if (! $isStart) data-continues-before @endif
     @if (! $isEnd) data-continues-after @endif
@@ -52,6 +60,7 @@
         'h-full' => $display === 'timed',
         'relative' => $resizable,
         'cursor-grab touch-manipulation select-none' => $movable,
+        'cursor-pointer' => $clickable && ! $movable,
     ]) }}
 >
     @if ($display === 'list-item')
