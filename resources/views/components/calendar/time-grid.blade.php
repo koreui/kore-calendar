@@ -91,7 +91,13 @@
                     $starting = array_values(array_filter($layout->allDay['slices'], fn ($s) => $s['colStart'] === $i));
                     $cell = $layout->allDay['cells'][$i];
                 @endphp
-                <div role="cell" @class(['relative min-w-0 border-l border-kore-border py-0.5', 'kore-calendar-day-today' => $c['isToday']])>
+                <div
+                    role="cell"
+                    data-kore-drop="allday"
+                    data-date="{{ $c['date']->ts }}"
+                    @if ($c['resource']) data-resource="{{ $c['resource']->id }}" @endif
+                    @class(['relative min-w-0 border-l border-kore-border py-0.5', 'kore-calendar-day-today' => $c['isToday']])
+                >
                     <ul class="kore-calendar-month-events" style="--kc-rows: {{ $layout->allDay['rowCount'] }}">
                         @foreach ($starting as $slice)
                             <li wire:key="kore-calendar-allday-{{ $slice['key'] }}" class="kore-calendar-month-slot z-10" style="--kc-row: {{ $slice['row'] }}; --kc-span: {{ $slice['colEnd'] - $slice['colStart'] }}">
@@ -121,7 +127,14 @@
             </div>
 
             @foreach ($layout->lanes as $i => $lane)
-                <div role="cell" @class(['relative border-l border-kore-border', 'kore-calendar-day-today' => $columns[$i]['isToday']])>
+                <div
+                    role="cell"
+                    data-kore-drop="time"
+                    data-origin="{{ $columns[$i]['date']->ts + $calendar->settings->layoutOptions->slotMin }}"
+                    data-axis="{{ $layout->axisSeconds }}"
+                    @if ($columns[$i]['resource']) data-resource="{{ $columns[$i]['resource']->id }}" @endif
+                    @class(['relative border-l border-kore-border', 'kore-calendar-day-today' => $columns[$i]['isToday']])
+                >
                     <div aria-hidden="true">
                         @foreach ($layout->slots as $slot)
                             <div @class(['h-[var(--kore-calendar-slot-height)] border-kore-border', 'border-t' => $slot['start'] % 3600 === 0, 'border-t border-dashed border-kore-border/50' => $slot['start'] % 3600 !== 0])></div>

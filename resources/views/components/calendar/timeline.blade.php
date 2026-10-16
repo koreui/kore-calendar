@@ -109,7 +109,15 @@
                         <span class="truncate">{{ $row['resource']?->title ?? $calendar->title() }}</span>
                     </div>
 
-                    <div role="cell" class="kore-calendar-timeline-lane relative" style="--kc-levels: {{ $row['levels'] }}">
+                    <div
+                        role="cell"
+                        class="kore-calendar-timeline-lane relative"
+                        data-kore-drop="timeline"
+                        data-origin="{{ $layout->range->render->start->ts }}"
+                        data-axis="{{ $layout->axisSeconds }}"
+                        @if ($row['resource']) data-resource="{{ $row['resource']->id }}" @endif
+                        style="--kc-levels: {{ $row['levels'] }}"
+                    >
                         <ul class="absolute inset-0">
                             @foreach ($row['events'] as $item)
                                 <li

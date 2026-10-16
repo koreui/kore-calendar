@@ -157,6 +157,27 @@
     pointer-events: none;
 }
 
+/* ── Interacción ───────────────────────────────────────────────────────── */
+
+/* La previsualización del gesto: la dibuja JS en una capa wire:ignore. */
+.kore-calendar-preview {
+    position: absolute;
+    border: 2px dashed var(--kore-primary);
+    border-radius: var(--kore-radius-sm);
+    background: color-mix(in oklch, var(--kore-primary) 12%, transparent);
+    pointer-events: none;
+}
+
+.kore-calendar-resize {
+    opacity: 0;
+}
+
+.kore-calendar-event:hover .kore-calendar-resize,
+.kore-calendar-event:focus-visible .kore-calendar-resize {
+    opacity: 1;
+    background: color-mix(in oklch, var(--kc-color) 45%, transparent);
+}
+
 @media (prefers-reduced-motion: no-preference) {
     .kore-calendar-event {
         transition: background-color 120ms ease;

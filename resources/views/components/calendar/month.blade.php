@@ -60,6 +60,7 @@
                     @endphp
                     <div
                         role="cell"
+                        @unless ($cell['isDisabled']) data-kore-drop="day" data-date="{{ $cell['date']->ts }}" @endunless
                         @if ($cell['isToday']) aria-current="date" @endif
                         @class([
                             'relative flex min-w-0 flex-col gap-0.5 border-kore-border pb-1',

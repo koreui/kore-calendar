@@ -4,8 +4,9 @@
       list-item punto + hora + título              — evento con hora de un solo día en el mes
       timed     bloque en la rejilla horaria        — con hora, alto según duración
 
-    Con `url` es un enlace; sin ella, un elemento no enfocable: el calendario de
-    la fase 3 es de solo lectura (la interacción llega con la fase 6).
+    Con `url` es un enlace. Si el calendario es editable y el evento se puede
+    mover, es enfocable y lleva sus datos en data-* para KoreCalendarInteraction
+    (Espacio para agarrarlo con el teclado). Si se puede redimensionar, lleva un asa.
 --}}
 @props([
     'calendar',
@@ -25,11 +26,22 @@
     $style = \KoreUi\Calendar\View\EventColor::style($color);
     $showTime = ! $instance->allDay && $isStart;
     $tag = $event->url ? 'a' : 'div';
+    $movable = \KoreUi\Calendar\Interaction\Editability::canMove($event, $calendar->settings);
+    // El asa va en el borde real del evento: un trozo que sigue en la semana
+    // siguiente no se redimensiona desde aquí.
+    $resizable = $display !== 'list-item' && $isEnd && \KoreUi\Calendar\Interaction\Editability::canResize($event, $calendar->settings);
 @endphp
 
 <{{ $tag }}
     @if ($event->url) href="{{ $event->url }}" @endif
     data-kore-calendar-event="{{ $event->id }}"
+    data-kore-event="{{ $event->id }}"
+    data-title="{{ $event->title }}"
+    data-start="{{ $instance->range->start->ts }}"
+    data-end="{{ $instance->range->end->ts }}"
+    data-all-day="{{ $instance->allDay ? '1' : '0' }}"
+    @if ($movable) data-movable @unless ($event->url) tabindex="0" role="button" @endunless aria-describedby="kore-calendar-kbd-help" @endif
+    @if ($resizable) data-resizable @endif
     @if (! $isStart) data-continues-before @endif
     @if (! $isEnd) data-continues-after @endif
     @if ($style) style="{{ $style }}" @endif
@@ -38,6 +50,8 @@
         'kore-calendar-event rounded-kore-sm px-1.5 py-0.5' => $display !== 'list-item',
         'flex items-center gap-1.5 rounded-kore-sm px-1 py-0.5 text-kore-fg hover:bg-kore-muted' => $display === 'list-item',
         'h-full' => $display === 'timed',
+        'relative' => $resizable,
+        'cursor-grab touch-manipulation select-none' => $movable,
     ]) }}
 >
     @if ($display === 'list-item')
@@ -55,5 +69,17 @@
         <span class="block truncate">
             @if ($showTime)<span class="tabular-nums">{{ $calendar->time($instance->range->start) }}</span> @endif<span class="font-medium">{{ $event->title }}</span>
         </span>
+    @endif
+
+    @if ($resizable)
+        <span
+            data-kore-resize="end"
+            aria-hidden="true"
+            @class([
+                'kore-calendar-resize absolute',
+                'inset-x-0 bottom-0 h-1.5 cursor-ns-resize' => $display === 'timed',
+                'inset-y-0 end-0 w-1.5 cursor-ew-resize' => $display !== 'timed',
+            ])
+        ></span>
     @endif
 </{{ $tag }}>

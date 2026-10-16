@@ -85,3 +85,53 @@ class Meeting extends Model
 | `goToDate('YYYY-MM-DD')` | Va a una fecha; solo fechas reales |
 
 Atajos de teclado dentro del calendario: **RePág / AvPág** periodo anterior y siguiente, **T** hoy.
+
+## Edición: mover, redimensionar y seleccionar
+
+```php
+public function configure(): void
+{
+    $this->editable()->selectable()->snap('15m');
+}
+
+protected function persistMove(CalendarEvent $event, EventMutation $mutation)
+{
+    Meeting::whereKey($event->id)->update([
+        'starts_at' => $mutation->start,          // instante en la zona de la vista
+        'ends_at' => $mutation->end,
+        'room_id' => $mutation->resourceIds[0] ?? null,
+    ]);
+}
+
+protected function persistResize(CalendarEvent $event, EventMutation $mutation)
+{
+    Meeting::whereKey($event->id)->update(['ends_at' => $mutation->end]);
+}
+
+protected function onDateSelect(Selection $selection): void
+{
+    $this->dispatch('kore:open', name: 'meeting-form', arguments: [
+        'start' => $selection->start->toIso8601String(),
+        'end' => $selection->end->toIso8601String(),
+    ]);
+}
+```
+
+- **Lo que manda el navegador no es fiable.** El evento se busca entre los que devuelve tu `events()` para la vista actual (respeta tus scopes y evita mover un evento ajeno), el destino se vuelve a ajustar al `snap` y se valida: editable, `validRange`, solapes (`eventOverlap(false)`, o `overlap: false` en un evento; los del mismo `groupId` no chocan entre sí) y que el recurso destino exista.
+- **El hook decide al final.** `persistMove` / `persistResize` devuelven `null` o `true` para aceptar, `false` o un texto para rechazar (el texto es el motivo que verá el usuario). Corren dentro de una transacción si hay base de datos. Una `ValidationException` muestra su mensaje; cualquier otra excepción se reporta y se rechaza con un mensaje genérico.
+- **Al aceptar** se disparan los eventos de Laravel `EventMoved` / `EventResized` (con `calendarClass`, `event` y `mutation`) y el cambio se anuncia al lector de pantalla. **Al rechazar**, toast de error con el motivo y el evento no se mueve.
+- **`EventMutation`**: `start`, `end` (instantes), `startMarker`, `endMarker` (horas de pared), `allDay`, `resourceIds`, los valores `previous*`, `deltaSeconds`, `isResourceChange()`, `isAllDayChange()`.
+- **Día completo ↔ con hora:** arrastrar de una columna horaria al carril de todo el día (o al revés) cambia el tipo; sin `allDayMaintainDuration()` la duración pasa a la por defecto del nuevo tipo, como en FullCalendar.
+- **Por evento:** `editable`, `startEditable`, `durationEditable` y `overlap` en el `CalendarEvent` ganan a la configuración.
+
+**Teclado:** con un evento enfocado, Espacio lo agarra; ←/→ lo mueven un día, ↑/↓ un slot (una semana en el mes), Mayúsculas + flechas cambian la duración, Intro suelta y Escape cancela. Cada paso se anuncia. **Táctil:** pulsación larga para empezar a arrastrar; un deslizamiento normal sigue siendo scroll.
+
+| Método de `configure()` | |
+|---|---|
+| `editable(bool = true)` | Mover y redimensionar |
+| `selectable(bool = true)` | Seleccionar rangos vacíos (`onDateSelect`) |
+| `snap('15m')` | Rejilla del gesto (por defecto, la del slot) |
+| `eventOverlap(bool)` | Si se permiten solapes |
+| `validRange(?string $start, ?string $end)` | Fechas fuera de las que no se puede soltar |
+| `allDayMaintainDuration(bool = true)` | Conservar la duración al cambiar de tipo |
+| `resourceEditable(bool)` | Si se puede cambiar un evento de recurso |
