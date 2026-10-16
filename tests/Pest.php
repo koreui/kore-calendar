@@ -1,0 +1,5 @@
+<?php
+
+use KoreUi\Calendar\Tests\TestCase;
+
+uses(TestCase::class)->in(__DIR__);

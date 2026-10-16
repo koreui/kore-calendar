@@ -1,0 +1,23 @@
+{
+    "name": "kore-calendar",
+    "version": "0.1.0",
+    "private": true,
+    "description": "Frontend assets de kore-ui/calendar",
+    "main": "resources/js/index.js",
+    "license": "MIT",
+    "scripts": {
+        "build": "vite build",
+        "dev": "vite build --watch",
+        "size": "node scripts/bundle-size.mjs",
+        "dist:check": "node scripts/dist-sync.mjs",
+        "test:js": "vitest run",
+        "test:js:watch": "vitest"
+    },
+    "devDependencies": {
+        "acorn": "^8.17.0",
+        "alpinejs": "^3.15.12",
+        "jsdom": "^29.1.1",
+        "vite": "^6.0.0",
+        "vitest": "^2.1.9"
+    }
+}

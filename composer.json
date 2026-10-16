@@ -1,0 +1,56 @@
+{
+    "name": "kore-ui/calendar",
+    "description": "Calendario de eventos y recursos para Laravel con Livewire 4, sobre kore-ui",
+    "license": "MIT",
+    "type": "library",
+    "keywords": ["laravel", "livewire", "calendar", "scheduler", "resources", "timeline", "kore-ui"],
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../kore-ui",
+            "options": {
+                "symlink": true
+            }
+        }
+    ],
+    "require": {
+        "php": "^8.2",
+        "illuminate/contracts": "^12.0|^13.0",
+        "illuminate/support": "^12.0|^13.0",
+        "kore-ui/kore-ui": "^2.3",
+        "livewire/livewire": "^4.0",
+        "nesbot/carbon": "^3.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^10.0|^11.0",
+        "pestphp/pest": "^3.0|^5.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "KoreUi\\Calendar\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "KoreUi\\Calendar\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "branch-alias": {
+            "dev-main": "0.x-dev"
+        },
+        "laravel": {
+            "providers": [
+                "KoreUi\\Calendar\\KoreCalendarServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    }
+}

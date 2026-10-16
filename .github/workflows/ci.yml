@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# kore-ui/calendar depende de kore-ui/kore-ui por un path repository (../kore-ui),
+# así que cada job clona kore-ui al lado antes de instalar. Si el repositorio de
+# kore-ui es privado, hace falta el secreto KORE_UI_TOKEN con permiso de lectura.
+env:
+  KORE_UI_REPO: koreui/kore-ui
+
+jobs:
+  php-tests:
+    name: PHP ${{ matrix.php }} / Laravel ${{ matrix.laravel }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.3', '8.4']
+        laravel: ['12', '13']
+        exclude:
+          - php: '8.2'
+            laravel: '13'
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Clone kore-ui next to the package
+        run: git clone --depth 1 "https://x-access-token:${{ secrets.KORE_UI_TOKEN || github.token }}@github.com/${KORE_UI_REPO}.git" ../kore-ui
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: dom, curl, libxml, mbstring, zip, pdo, sqlite3, pdo_sqlite, bcmath
+          coverage: none
+          ini-values: memory_limit=-1
+
+      - name: Install Composer dependencies (Laravel ${{ matrix.laravel }})
+        run: composer update --prefer-dist --no-interaction --no-progress --with "illuminate/support:^${{ matrix.laravel }}.0"
+
+      - name: Run Pest
+        run: ./vendor/bin/pest
+
+  js-tests:
+    name: JS (Vitest + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Run Vitest
+        run: npm run test:js
+
+      # ANTES del build a propósito: después, el dist siempre está fresco.
+      - name: Check dist/ is in sync with sources
+        run: npm run dist:check
+
+      - name: Build assets
+        run: npm run build
+
+      - name: Verify committed dist/ matches the build
+        run: |
+          if ! git diff --quiet -- dist/; then
+            echo "::error::dist/kore-calendar.js no coincide con el build de resources/js/."
+            echo "Ejecuta 'npm run build' y commitea dist/kore-calendar.js."
+            git diff --stat -- dist/
+            exit 1
+          fi
+
+      - name: Check bundle size
+        run: npm run size
