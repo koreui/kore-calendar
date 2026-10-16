@@ -50,7 +50,29 @@ final class TimeGridLayout
         public readonly ?float $nowTop,
         public readonly ?int $nowColumn,
         public readonly array $hours = [],
+        /** Duración de una ranura, en segundos (la de `time.slot_duration`). */
+        public readonly int $slotSeconds = 1800,
     ) {}
+
+    /**
+     * Cada cuántas ranuras cae una hora en punto del eje: 2 con ranuras de media hora, 4 con
+     * ranuras de 15 minutos, 3 con 20, 1 con ranuras de una hora o más. La vista la usa para
+     * dibujar con un degradado la línea continua de la hora y la discontinua de las demás
+     * ranuras, sin un nodo por ranura y columna.
+     *
+     * Las etiquetas del eje son relativas a su inicio (`slots()`), así que «hora en punto» es
+     * `start % 3600 === 0` y no la hora de reloj.
+     */
+    public function hourEvery(): int
+    {
+        [$a, $b] = [3600, max(1, $this->slotSeconds)];
+
+        while ($b !== 0) {
+            [$a, $b] = [$b, $a % $b];
+        }
+
+        return intdiv(3600, $a);
+    }
 
     /**
      * @param  list<EventInstance>  $instances
@@ -83,6 +105,7 @@ final class TimeGridLayout
             nowTop: $nowTop,
             nowColumn: $nowColumn,
             hours: self::hours($columns, $options, $axis, $businessHours),
+            slotSeconds: $slotDuration,
         );
     }
 
@@ -157,21 +180,6 @@ final class TimeGridLayout
         return $columns;
     }
 
-    private static function belongs(EventInstance $i, ?CalendarResource $resource): bool
-    {
-        if ($resource === null) {
-            return true;
-        }
-
-        foreach ($i->event->resourceIds as $id) {
-            if ((string) $id === (string) $resource->id) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     /**
      * El carril de todo el día. Con recursos, cada recurso corta sus eventos sobre
      * SUS columnas; si esas columnas no son contiguas (fecha sobre recurso), el
@@ -186,16 +194,16 @@ final class TimeGridLayout
         }
 
         $segments = [];
+        // Solo los de día completo, y por recurso: cada grupo recorre los suyos, no todos los eventos de la vista.
+        $allDay = array_values(array_filter($instances, fn (EventInstance $i) => $i->allDay));
+        $byResource = null;
 
         foreach ($groups as $indexes) {
             $resource = $columns[$indexes[0]]['resource'];
             $slicer = new DaySlicer([array_map(fn ($i) => $columns[$i]['date'], $indexes)], $range->active, $options->nextDayThreshold);
+            $own = $resource === null ? $allDay : ($byResource ??= ResourceIndex::of($allDay))[(string) $resource->id] ?? [];
 
-            foreach ($instances as $instance) {
-                if (! $instance->allDay || ! self::belongs($instance, $resource)) {
-                    continue;
-                }
-
+            foreach ($own as $instance) {
                 foreach ($slicer->slice($instance) as $s) {
                     $global = array_slice($indexes, $s->colStart, $s->colEnd - $s->colStart);
                     $contiguous = end($global) - $global[0] === count($global) - 1;
@@ -247,15 +255,36 @@ final class TimeGridLayout
         $slicer = new TimeSlicer(array_map(fn ($c) => $c['date'], $columns), $options->slotMin, $options->slotMax);
         $byColumn = array_fill(0, count($columns), []);
 
+        // Las columnas de cada recurso, y las que no tienen ninguno (aceptan cualquier evento). Un evento solo se
+        // corta contra las suyas: contra las 70 columnas de una semana de 10 recursos y 7 días eran 70 cortes por evento.
+        $open = [];
+        $ofResource = [];
+
+        foreach ($columns as $i => $c) {
+            if ($c['resource'] === null) {
+                $open[] = $i;
+            } else {
+                $ofResource[(string) $c['resource']->id][] = $i;
+            }
+        }
+
         foreach ($instances as $instance) {
             if ($instance->allDay) {
                 continue;
             }
 
-            foreach ($slicer->slice($instance) as $segment) {
-                if (self::belongs($instance, $columns[$segment->column]['resource'])) {
-                    $byColumn[$segment->column][] = $segment;
+            $targets = $open;
+
+            if ($ofResource !== []) {
+                foreach ($instance->event->resourceIds as $id) {
+                    foreach ($ofResource[(string) $id] ?? [] as $column) {
+                        $targets[] = $column;
+                    }
                 }
+            }
+
+            foreach ($slicer->slice($instance, $targets) as $segment) {
+                $byColumn[$segment->column][] = $segment;
             }
         }
 

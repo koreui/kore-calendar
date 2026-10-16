@@ -16,7 +16,7 @@ Los atajos, el teclado de los eventos y los anuncios de movimiento son de `KoreC
 - **Hoy** lleva `aria-current="date"` (la celda, la cabecera de columna o el `h3` de la agenda).
 - **Eventos.** Con `url` son enlaces (`<a>`). Si se pueden mover o pulsar, son `role="button"` con `tabindex="0"`. Los demás son texto de la celda, no enfocables.
 - **Decoración sin semántica** (`aria-hidden`): el horario no laborable, la línea de «ahora», la capa de previsualización del arrastre, el asa de redimensionar, los puntos de color y los iconos.
-- **Conflictos** (`highlightConflicts()`): además del icono rojo y el borde, el evento lleva un texto solo para lectores de pantalla («En conflicto con «Reunión B»», traducción `conflict`). El aviso no depende del color.
+- **Conflictos** (`highlightConflicts()`): además del icono rojo y el borde, el evento lleva un texto solo para lectores de pantalla («En conflicto con «Reunión B»», traducción `conflict`). Nombra como mucho tres títulos y cuenta el resto («En conflicto con «A», «B», «C» y 4 más», traducción `conflict_more`): un evento con decenas de conflictos no lleva decenas de títulos. El aviso no depende del color.
 - **Color de los eventos.** El texto es siempre el primer plano del tema sobre un tinte del color; el color de categoría no se usa como texto.
 - **Textos.** Ninguna vista lleva texto fijo: todo, también los nombres accesibles, sale de las [traducciones](configuration.md#idioma-y-traducciones), así que están en el idioma del calendario (inglés o español).
 

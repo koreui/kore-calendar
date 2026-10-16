@@ -177,6 +177,42 @@
     height: calc(var(--kc-slots) * var(--kore-calendar-slot-height));
 }
 
+/*
+ * Las líneas de las ranuras de una columna, en un solo nodo (con 10 recursos × 7 días y ranuras de
+ * media hora eran 3 360 divs vacíos). El alto es ranuras × --kore-calendar-slot-height (--kc-slots).
+ * La hora en punto es una línea continua, cada --kc-hour ranuras; las demás ranuras, una discontinua y
+ * al 50 %: lo mismo que eran el borde superior de cada ranura y el borde discontinuo de la intermedia.
+ * Un degradado no puede ser a la vez una raya cada ranura y discontinuo, así que la discontinua es el
+ * ::before con una máscara de rayas. Si el navegador no soporta máscaras no se pinta (mejor sin las
+ * líneas tenues que una columna rayada). No recibe el puntero: el destino de un gesto es la celda,
+ * y la ranura se calcula por coordenadas.
+ */
+.kore-calendar-slots {
+    position: relative;
+    height: calc(var(--kc-slots) * var(--kore-calendar-slot-height));
+    background-image: repeating-linear-gradient(
+        to bottom,
+        var(--kore-border) 0 1px,
+        transparent 1px calc(var(--kore-calendar-slot-height) * var(--kc-hour))
+    );
+}
+
+@supports (mask-image: linear-gradient(#000, #000)) or (-webkit-mask-image: linear-gradient(#000, #000)) {
+    .kore-calendar-slots::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background-image: repeating-linear-gradient(
+            to right,
+            color-mix(in oklab, var(--kore-border) 50%, transparent) 0 3px,
+            transparent 3px 5px
+        );
+        -webkit-mask-image: repeating-linear-gradient(to bottom, #000 0 1px, transparent 1px var(--kore-calendar-slot-height));
+        mask-image: repeating-linear-gradient(to bottom, #000 0 1px, transparent 1px var(--kore-calendar-slot-height));
+    }
+}
+
 .kore-calendar-timed {
     position: absolute;
     top: calc(var(--kc-top) * 1%);

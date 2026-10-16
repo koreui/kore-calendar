@@ -56,6 +56,14 @@ y el proyecto usa [Semantic Versioning](https://semver.org/lang/es/).
 
 ### Changed
 
+- **Rendimiento: el mes con `maxEvents` y miles de eventos es hasta 4 veces más rápido.** `HiddenGroups::add()` reordenaba los trozos en cada alta; ahora los ordena `finalize()` una vez por grupo. Mes de 3 000 eventos con `maxEvents(4)`: de 440 a 106 ms de render.
+- **Rendimiento: el timeline y la rejilla por recurso ya no filtran todos los eventos por cada fila o columna.** Un índice por recurso sirve a las filas del timeline y al carril de todo el día, y `TimeSlicer::slice()` corta con enteros y solo contra las columnas de los recursos del evento (`$only`). Timeline de 300 filas × 2 000 eventos: de 122 a 44 ms; resource-week de 10 × 300: de 238 a 82 ms.
+- **Rendimiento: `ConflictFinder::find()` barre cada carril por separado** y acepta `$within`, que el timeline virtualizado rellena con las filas montadas. Resource-week de 10 × 300 con conflictos: de 787 a 231 ms; timeline virtualizado con conflictos: de 106 a 16 ms.
+- **Rendimiento: `RenderedCalendar::format()` y `time()` guardan lo ya formateado** dentro de la instancia. Blade entre un 30 y un 50 % menos en el mes y la semana.
+- **El texto de conflicto para lectores de pantalla nombra como mucho tres títulos:** «En conflicto con «A», «B», «C» y 4 más» (clave `conflict_more`). Antes crecía con todos los conflictos del evento.
+- **Menos atributos en cada evento.** Ya no sale `data-kore-calendar-event` (nadie lo leía). Un evento de solo lectura queda sin atributos de datos: `data-kore-event` y `data-kore-instance` solo si es movible, redimensionable o pulsable, y `data-title`, `data-start`, `data-end` y `data-all-day` solo si se puede mover o redimensionar. Si tu CSS o JS los leía en eventos de solo lectura, ya no están.
+- **La rejilla horaria dibuja las ranuras con un `<div>` por columna**, con degradados sobre `--kore-border` (`.kore-calendar-slots`). Resource-week vacío de 10 recursos: de 685 a 172 KB de HTML.
+
 - **Ruptura leve:** con `eventForm()` sin `editable()`, cambiar fechas, duración o recurso y eliminar desde el formulario se rechazan («Este evento no se puede editar»). Añade `->editable()` o `editable: true` en el evento.
 - **Ruptura leve:** `events()`, `resources()` y `configure()` son `protected` en la base. Una subclase con `public` sigue funcionando, pero el paquete bloquea su llamada desde el navegador.
 - **Ruptura leve:** `CalendarEvent` lanza `InvalidArgumentException` con una `url` de otro esquema.

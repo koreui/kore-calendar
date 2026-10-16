@@ -68,6 +68,8 @@ return [
 
     // `->highlightConflicts()`: el texto para lectores de pantalla de un evento que se solapa con otros.
     'conflict' => 'En conflicto con :with',
+    // Con más de tres conflictos solo se nombran tres títulos; el resto se cuenta (:titles es la lista ya entrecomillada).
+    'conflict_more' => ':titles y :count más',
 
     // Deshacer (`->undoable()`): un toast con la acción tras mover o redimensionar.
     'undo' => 'Deshacer',

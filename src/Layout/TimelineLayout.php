@@ -80,6 +80,7 @@ final class TimelineLayout
         $rows = [];
         $hoursOf = [];
         $computed = [];
+        $byResource = null;
 
         foreach ($window as $row) {
             if ($row['type'] === 'group') {
@@ -88,7 +89,11 @@ final class TimelineLayout
                 continue;
             }
 
-            $own = array_values(array_filter($instances, fn (EventInstance $i) => self::belongs($i, $row['resource'])));
+            // El índice se construye una vez (al primer recurso) y no se filtran todos los eventos por cada fila:
+            // con cientos de filas y miles de eventos eso eran filas × eventos comprobaciones.
+            $own = $row['resource'] === null
+                ? array_values($instances)
+                : ($byResource ??= ResourceIndex::of($instances))[(string) $row['resource']->id] ?? [];
             [$events, $levels] = self::placeRow($own, $axis, $axisSeconds, $slotSeconds, $options);
 
             // Por recurso y, dentro, por horario: con cientos de filas sin horario propio
@@ -154,21 +159,6 @@ final class TimelineLayout
     private static function resourceRow(CalendarResource $r, int $depth): array
     {
         return ['type' => 'resource', 'key' => 'r:'.$r->id, 'resource' => $r, 'depth' => $depth, 'group' => $r->group];
-    }
-
-    private static function belongs(EventInstance $i, ?CalendarResource $resource): bool
-    {
-        if ($resource === null) {
-            return true;
-        }
-
-        foreach ($i->event->resourceIds as $id) {
-            if ((string) $id === (string) $resource->id) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /**

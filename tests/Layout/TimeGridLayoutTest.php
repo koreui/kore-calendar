@@ -101,3 +101,28 @@ it('fecha sobre recursos: un evento de día completo de varios días se parte po
         // Recurso arriba: A ocupa las columnas 0-6 seguidas → una sola barra.
         ->and(array_map(fn ($s) => [$s['colStart'], $s['colEnd']], $below->allDay['slices']))->toBe([[0, 2]]);
 });
+
+it('hourEvery(): cada cuántas ranuras cae una hora en punto del eje', function () use ($now, $week) {
+    $every = fn (int $slotDuration) => TimeGridLayout::build($week(), [], $now, new LayoutOptions, null, false, $slotDuration)->hourEvery();
+
+    // Con la ranura de 30 min la hora cae cada 2; con 15, cada 4; con 20, cada 3; con 1 h o más, en cada una.
+    expect($every(1800))->toBe(2)
+        ->and($every(900))->toBe(4)
+        ->and($every(1200))->toBe(3)
+        ->and($every(600))->toBe(6)
+        ->and($every(3600))->toBe(1)
+        ->and($every(7200))->toBe(1)
+        // 45 min: 3 600 solo divide a 4 × 2 700 = 10 800, el múltiplo común más cercano.
+        ->and($every(2700))->toBe(4)
+        ->and($every(5400))->toBe(2);
+});
+
+it('hourEvery() coincide con las ranuras cuya hora relativa es en punto', function () use ($now, $week) {
+    foreach ([300, 600, 900, 1200, 1800, 2700, 3600, 5400, 7200] as $slotDuration) {
+        $g = TimeGridLayout::build($week(), [], $now, new LayoutOptions, null, false, $slotDuration);
+        $hourly = array_keys(array_filter($g->slots, fn ($slot) => $slot['start'] % 3600 === 0));
+
+        // Las ranuras con la hora en punto son exactamente 0, E, 2E… (lo que dibuja el degradado).
+        expect($hourly)->toBe(array_values(array_filter(array_keys($g->slots), fn ($k) => $k % $g->hourEvery() === 0)), "ranura de {$slotDuration} s");
+    }
+});

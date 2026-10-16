@@ -12,7 +12,7 @@ namespace KoreUi\Calendar\Layout\Kernel;
  */
 final class RawHiddenGroup
 {
-    /** @param  list<Slice>  $hiddenSlices  En orden de evento: los fragmentos de una fuente quedan contiguos para fundirlos al final. */
+    /** @param  list<Slice>  $hiddenSlices  Sin ordenar: `HiddenGroups::finalize()` los pone en orden de evento (los fragmentos de una fuente quedan contiguos para fundirlos). */
     public function __construct(
         public readonly int|float $start,
         public readonly int|float $end,

@@ -25,6 +25,11 @@ final class HiddenGroups
      * Devolver solo lo nuevo es lo que hace que la "tasa" del enlace se cobre una
      * vez por tramo de cobertura y no una vez por cada evento oculto.
      *
+     * Los trozos de un grupo NO se mantienen ordenados: `finalize()` los ordena una
+     * vez por grupo. Reordenarlos en cada alta costaba O(n log n) por trozo oculto y
+     * en un mes con miles de eventos y `maxEvents` era el grueso del layout; nada
+     * lee el orden de un grupo hasta que se compila.
+     *
      * @param  list<RawHiddenGroup>  $groups
      * @return list<Lateral>
      */
@@ -46,7 +51,6 @@ final class HiddenGroups
             }
         }
 
-        usort($merged, PlacementKernel::compareByEventOrder(...));
         SpanMath::insertLaterally($untouched, new RawHiddenGroup($start, $end, $merged));
         $groups = $untouched;
 
@@ -63,7 +67,7 @@ final class HiddenGroups
     public static function finalize(array $groups): array
     {
         return array_map(function (RawHiddenGroup $group): HiddenSliceGroup {
-            $hiddenSlices = self::mergeAdjacent($group->hiddenSlices);
+            $hiddenSlices = self::mergeAdjacent(PlacementKernel::sortByEventOrder($group->hiddenSlices));
 
             return new HiddenSliceGroup(
                 $hiddenSlices[0]->key(),

@@ -34,30 +34,40 @@ final class TimeSlicer
         return new DateRange($day->addSeconds($this->slotMin), $day->addSeconds($this->slotMax));
     }
 
-    /** @return list<TimeSegment> */
-    public function slice(EventInstance $instance): array
+    /**
+     * @param  ?list<int>  $only  Solo estas columnas (sus índices). Por defecto, todas: quien ya sabe a qué columnas
+     *                            puede ir el evento (las de sus recursos) no paga por cortarlo contra el resto.
+     * @return list<TimeSegment>
+     */
+    public function slice(EventInstance $instance, ?array $only = null): array
     {
         if ($instance->allDay) {
             return [];
         }
 
         $segments = [];
+        $from = $instance->range->start->ts;
+        $to = $instance->range->end->ts;
 
-        foreach (array_keys($this->columns) as $column) {
-            $range = $this->columnRange($column);
-            $part = $instance->range->intersect($range);
+        // Aritmética entera sobre el eje de cada columna: sin un DateRange ni un Marker por (evento, columna).
+        foreach ($only ?? array_keys($this->columns) as $column) {
+            $day = $this->columns[$column]->ts;
+            $origin = $day + $this->slotMin;
+            $limit = $day + $this->slotMax;
+            $start = $from > $origin ? $from : $origin;
+            $end = $to < $limit ? $to : $limit;
 
-            if ($part === null) {
+            if ($start >= $end) {
                 continue;
             }
 
             $segments[] = new TimeSegment(
                 instance: $instance,
                 column: $column,
-                start: $part->start->ts - $range->start->ts,
-                end: $part->end->ts - $range->start->ts,
-                isStart: $part->start->equals($instance->range->start),
-                isEnd: $part->end->equals($instance->range->end),
+                start: $start - $origin,
+                end: $end - $origin,
+                isStart: $start === $from,
+                isEnd: $end === $to,
             );
         }
 

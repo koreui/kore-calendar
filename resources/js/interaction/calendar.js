@@ -56,11 +56,13 @@ export default function KoreCalendarInteraction(config = {}) {
             const eventEl = e.target.closest('[data-kore-event]');
             const handle = e.target.closest('[data-kore-resize]');
             const drop = e.target.closest('[data-kore-drop]');
+            // Un evento de solo lectura no lleva data-kore-event, pero sigue siendo un evento: pulsar sobre él no empieza una selección.
+            const overEvent = eventEl !== null || e.target.closest('.kore-calendar-event, .kore-calendar-event-dot') !== null;
 
             let type = null;
             if (handle && eventEl?.hasAttribute('data-resizable')) type = 'resize';
             else if (eventEl?.hasAttribute('data-movable')) type = 'move';
-            else if (!eventEl && drop && this.selectable && !e.target.closest('button, a')) type = 'select';
+            else if (!overEvent && drop && this.selectable && !e.target.closest('button, a')) type = 'select';
             if (!type) return;
 
             const fromHit = this.hitAt(e.clientX, e.clientY);

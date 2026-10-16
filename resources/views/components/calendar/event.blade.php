@@ -10,6 +10,11 @@
 
     `data-kore-event` es el id del evento, que comparten todas las ocurrencias de una
     serie; `data-kore-instance`, el que distingue cada una y el que se manda al servidor.
+    Solo los llevan los eventos con los que se puede hacer algo (mover, redimensionar o
+    pulsar): uno de solo lectura no los necesita, y con miles de eventos pesan.
+    `data-title/start/end/all-day` son los datos del gesto (`readEvent()` en
+    resources/js/interaction/calendar.js) y solo salen si se puede mover o redimensionar;
+    `data-all-day` solo vale `1`, que es lo único que mira el JS.
 
     Con `highlightConflicts()`, un evento que se solapa con otros lleva data-conflict, un
     icono (decorativo) y un texto solo para lectores de pantalla que dice con quién. El
@@ -54,13 +59,16 @@
 
 <{{ $tag }}
     @if ($event->url) href="{{ $event->url }}" @endif
-    data-kore-calendar-event="{{ $event->id }}"
-    data-kore-event="{{ $event->id }}"
-    data-kore-instance="{{ $instance->instanceId }}"
-    data-title="{{ $event->title }}"
-    data-start="{{ $instance->range->start->ts }}"
-    data-end="{{ $instance->range->end->ts }}"
-    data-all-day="{{ $instance->allDay ? '1' : '0' }}"
+    @if ($movable || $resizable || $clickable)
+        data-kore-event="{{ $event->id }}"
+        data-kore-instance="{{ $instance->instanceId }}"
+    @endif
+    @if ($movable || $resizable)
+        data-title="{{ $event->title }}"
+        data-start="{{ $instance->range->start->ts }}"
+        data-end="{{ $instance->range->end->ts }}"
+        @if ($instance->allDay) data-all-day="1" @endif
+    @endif
     @if ($movable) data-movable aria-describedby="{{ $calendar->keyboardHelpId() }}" @endif
     @if ($clickable) data-clickable @endif
     @if (($movable || $clickable) && ! $event->url) tabindex="0" role="button" @endif

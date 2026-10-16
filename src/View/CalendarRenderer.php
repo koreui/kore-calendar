@@ -4,6 +4,7 @@ namespace KoreUi\Calendar\View;
 
 use KoreUi\Calendar\Availability\ConflictFinder;
 use KoreUi\Calendar\Events\EventCollector;
+use KoreUi\Calendar\Events\EventInstance;
 use KoreUi\Calendar\Events\EventNormalizer;
 use KoreUi\Calendar\Events\EventSource;
 use KoreUi\Calendar\Events\Sources\ArraySource;
@@ -53,9 +54,39 @@ final class CalendarRenderer
 
         // Los conflictos se buscan entre los eventos de TODO el rango dibujado, no solo los visibles
         // en la vista: en un "+N más" o en otra columna también están, y el aviso va por evento.
-        $conflicts = $settings->highlightConflicts ? ConflictFinder::byInstance(ConflictFinder::find($instances)) : [];
+        // La excepción son las filas de un timeline virtualizado que no se montan: el aviso solo se pinta
+        // en los eventos de las filas montadas, así que no se buscan los pares de los demás (sí los de
+        // un evento montado con uno que no, que comparten alguno de sus recursos).
+        $conflicts = $settings->highlightConflicts
+            ? ConflictFinder::byInstance(ConflictFinder::find($instances, false, self::mounted($layout)))
+            : [];
 
         return new RenderedCalendar($settings, $range, $layout, $now, $resources, $conflicts, $id);
+    }
+
+    /**
+     * Los eventos que se pintan, si el layout solo monta una parte de ellos (las filas de un timeline
+     * virtualizado); `null` si se pintan todos.
+     *
+     * @return ?list<EventInstance>
+     */
+    private static function mounted(MonthLayout|TimeGridLayout|ListLayout|TimelineLayout $layout): ?array
+    {
+        if (! $layout instanceof TimelineLayout || $layout->rowsBefore + $layout->rowsAfter === 0) {
+            return null;
+        }
+
+        $mounted = [];
+
+        foreach ($layout->rows as $row) {
+            if ($row['type'] === 'resource') {
+                foreach ($row['events'] as $event) {
+                    $mounted[] = $event['instance'];
+                }
+            }
+        }
+
+        return $mounted;
     }
 
     private static function timeline(CalendarSettings $settings, ViewRange $range, array $instances, $now, ?ResourceSet $resources, bool $virtualize): TimelineLayout

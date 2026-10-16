@@ -68,6 +68,8 @@ return [
 
     // `->highlightConflicts()`: the screen reader text of an event that overlaps others.
     'conflict' => 'Conflicts with :with',
+    // With more than three conflicts only three titles are named; the rest are counted (:titles is the quoted list).
+    'conflict_more' => ':titles and :count more',
 
     // Undo (`->undoable()`): a toast with the action after a move or resize.
     'undo' => 'Undo',

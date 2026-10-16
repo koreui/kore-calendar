@@ -322,6 +322,7 @@ Salen como motivo en un toast de error y como anuncio. `move_rejected` y `resize
 | `event_resized` | `:title`, `:date` | Al cambiar el fin. También se anuncia así cada pulsación de Mayúsculas + flecha al redimensionar con el teclado |
 | `event_resized_start` | `:title`, `:date` | Al cambiar el inicio |
 | `conflict` | `:with` | Texto para lectores de pantalla de un evento en conflicto: los títulos de los otros, entre las comillas del idioma (`event_quoted`) y separados por comas |
+| `conflict_more` | `:titles`, `:count` | Lo que se pone en `:with` de `conflict` cuando hay más de tres conflictos: los tres primeros títulos (`:titles`, ya entrecomillados) y cuántos eventos quedan sin nombrar (««A», «B», «C» y 4 más») |
 | `event_quoted` | `:title` | Un título entre comillas dentro de una lista: «Reunión» en español, “Reunión” en inglés |
 
 ### Deshacer

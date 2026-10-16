@@ -19,7 +19,13 @@ use KoreUi\Core\Support\IdContext;
  */
 final class RenderedCalendar
 {
+    /** Cuántos títulos nombra el aviso de conflicto de un evento antes de pasar a «y N más». */
+    private const CONFLICT_TITLES = 3;
+
     private ?string $keyboardHelpId = null;
+
+    /** @var array<string, array<int, string>> `format()` ya calculados: patrón → instante → texto. */
+    private array $formatted = [];
 
     public function __construct(
         public readonly CalendarSettings $settings,
@@ -62,7 +68,15 @@ final class RenderedCalendar
         return $this->conflicts[$instance->instanceId] ?? [];
     }
 
-    /** El texto para lectores de pantalla de un evento en conflicto: «En conflicto con «A», «B»». `null` si no lo está. */
+    /**
+     * El texto para lectores de pantalla de un evento en conflicto: «En conflicto con «A», «B», «C» y 4 más».
+     * `null` si no lo está.
+     *
+     * Cita como mucho `CONFLICT_TITLES` títulos distintos y cuenta el resto de eventos en «y N más»: el texto
+     * de cada evento crecía con todos sus conflictos (en una semana muy cargada, cientos de títulos por evento,
+     * miles de bytes de HTML para algo que un lector de pantalla no lee entero). El total se conserva: cada
+     * evento en conflicto, o está nombrado, o entra en la cuenta. Dos con el mismo título se nombran una vez.
+     */
     public function conflictLabel(EventInstance $instance): ?string
     {
         $others = $this->conflictsOf($instance);
@@ -71,9 +85,26 @@ final class RenderedCalendar
             return null;
         }
 
-        $titles = array_unique(array_map(fn (EventInstance $other) => $this->text('event_quoted', ['title' => $other->event->title]), $others));
+        $named = [];
+        $more = 0;
 
-        return $this->text('conflict', ['with' => implode(', ', $titles)]);
+        foreach ($others as $other) {
+            $title = $other->event->title;
+
+            if (isset($named[$title])) {
+                continue;
+            }
+
+            if (count($named) < self::CONFLICT_TITLES) {
+                $named[$title] = $this->text('event_quoted', ['title' => $title]);
+            } else {
+                $more++;
+            }
+        }
+
+        $with = implode(', ', $named);
+
+        return $this->text('conflict', ['with' => $more > 0 ? $this->text('conflict_more', ['titles' => $with, 'count' => $more]) : $with]);
     }
 
     /** Una fecha con uno de los formatos del config (`formats.*`), o un patrón isoFormat directo. */
@@ -81,7 +112,9 @@ final class RenderedCalendar
     {
         $pattern = $this->settings->formats[$format] ?? $format;
 
-        return $date->toCarbon()->locale($this->settings->locale)->isoFormat($pattern);
+        // Las vistas piden la misma hora una vez por evento (y las del mismo minuto, cientos de veces): se formatea
+        // una vez por (patrón, instante). El idioma es el del calendario, fijo en esta instancia.
+        return $this->formatted[$pattern][$date->ts] ??= $date->toCarbon()->locale($this->settings->locale)->isoFormat($pattern);
     }
 
     public function time(Marker $date): string

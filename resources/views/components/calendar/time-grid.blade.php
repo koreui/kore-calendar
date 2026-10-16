@@ -7,6 +7,12 @@
     posiciones llegan en porcentaje del eje (--kc-top, --kc-height, --kc-left,
     --kc-right): el navegador escala sin JavaScript.
 
+    Las líneas de las ranuras no son un nodo por ranura y columna: cada columna lleva un solo
+    div (.kore-calendar-slots) que las dibuja con degradados, con la hora en punto continua y las
+    demás ranuras discontinuas y tenues. Los gestos no dependen de ellas: el destino es la celda
+    (data-kore-drop) y la ranura se calcula por coordenadas. El número de ranuras y cada cuántas cae
+    una hora (--kc-slots, --kc-hour) viajan en el style de la tabla.
+
     Horario laboral: lo que no lo es se pinta como bloques decorativos en % del eje
     (aria-hidden: la información accesible es la validación del servidor), y cada
     destino de arrastre lleva sus tramos laborables en data-business para que la
@@ -47,7 +53,7 @@
     aria-label="{{ $calendar->title() }}"
     x-data="KoreCalendarGrid({ columns: {{ $count }} })"
     x-on:keydown="onKeydown($event)"
-    style="--kc-min: calc(4rem + {{ $count }} * var(--kore-calendar-column-min))"
+    style="--kc-min: calc(4rem + {{ $count }} * var(--kore-calendar-column-min)); --kc-slots: {{ count($layout->slots) }}; --kc-hour: {{ $layout->hourEvery() }}"
     {{ $attributes->class('kore-calendar-time-grid max-h-[44rem] overflow-auto rounded-kore-lg border border-kore-border bg-kore-bg text-kore-fg') }}
 >
     {{-- Cabecera y todo el día: fijas arriba al hacer scroll por las horas --}}
@@ -146,11 +152,7 @@
                     @if ($columns[$i]['resource']) data-resource="{{ $columns[$i]['resource']->id }}" @endif
                     @class(['relative border-l border-kore-border', 'kore-calendar-day-today' => $columns[$i]['isToday']])
                 >
-                    <div aria-hidden="true">
-                        @foreach ($layout->slots as $slot)
-                            <div @class(['h-[var(--kore-calendar-slot-height)] border-kore-border', 'border-t' => $slot['start'] % 3600 === 0, 'border-t border-dashed border-kore-border/50' => $slot['start'] % 3600 !== 0])></div>
-                        @endforeach
-                    </div>
+                    <div aria-hidden="true" class="kore-calendar-slots"></div>
 
                     @foreach ($hours['off'] as $off)
                         <div aria-hidden="true" class="kore-calendar-non-business kore-calendar-non-business-v" style="--kc-top: {{ $off['top'] }}; --kc-height: {{ $off['height'] }}"></div>

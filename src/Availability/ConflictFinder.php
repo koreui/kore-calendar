@@ -34,31 +34,87 @@ final class ConflictFinder
     /**
      * Cada par una sola vez, ordenado por el inicio del primero y luego del segundo.
      *
+     * Dos eventos solo pueden estar en conflicto si comparten carril (ver `conflicts()`),
+     * así que se barre cada carril por separado: los de recursos distintos no se comparan
+     * nunca. Un evento con varios recursos está en el barrido de cada uno y un par que
+     * comparte más de un carril sale una sola vez. El orden es el de siempre: el de la
+     * lista entera ordenada por inicio, no el del barrido.
+     *
+     * Con `$within` solo se buscan los pares en los que participa alguna de esas
+     * instancias, y solo se barren los carriles que tocan: es lo que necesita quien pinta
+     * una parte de la lista (las filas montadas de un timeline virtualizado) y no quiere
+     * pagar por los conflictos de las que no se ven. Para cada instancia de `$within`
+     * salen todos sus pares, y en el mismo orden que sin `$within`.
+     *
      * @param  list<EventInstance>  $instances
+     * @param  ?list<EventInstance>  $within
      * @return list<array{0: EventInstance, 1: EventInstance}>
      */
-    public static function find(array $instances, bool $overlapAllowed = false): array
+    public static function find(array $instances, bool $overlapAllowed = false, ?array $within = null): array
     {
-        usort($instances, fn (EventInstance $a, EventInstance $b) => [$a->range->start->ts, $a->instanceId] <=> [$b->range->start->ts, $b->instanceId]);
+        usort($instances, fn (EventInstance $a, EventInstance $b) => ($a->range->start->ts <=> $b->range->start->ts) ?: ($a->instanceId <=> $b->instanceId));
 
-        $pairs = [];
-        $total = count($instances);
+        // Los índices de cada carril, ya en el orden de inicio: no hace falta ordenar cada uno.
+        $lanes = [];
 
-        for ($i = 0; $i < $total; $i++) {
-            $a = $instances[$i];
+        foreach ($instances as $index => $instance) {
+            foreach (Collision::lanes($instance->event->resourceIds) as $lane) {
+                $lanes[$lane][] = $index;
+            }
+        }
 
-            for ($j = $i + 1; $j < $total; $j++) {
-                $b = $instances[$j];
+        $wanted = null;
 
-                // Ordenados por inicio: pasado el fin de `$a` (con margen), ningún siguiente lo toca.
-                if ($b->range->start->ts >= $a->range->end->ts + self::SLACK) {
-                    break;
-                }
+        if ($within !== null) {
+            $wanted = [];
+            $touched = [];
 
-                if (self::conflicts($a, $b, $overlapAllowed)) {
-                    $pairs[] = [$a, $b];
+            foreach ($within as $instance) {
+                $wanted[$instance->instanceId] = true;
+
+                foreach (Collision::lanes($instance->event->resourceIds) as $lane) {
+                    $touched[$lane] = true;
                 }
             }
+
+            $lanes = array_intersect_key($lanes, $touched);
+        }
+
+        $total = count($instances);
+        $found = [];
+
+        foreach ($lanes as $members) {
+            $count = count($members);
+
+            for ($x = 0; $x < $count; $x++) {
+                $a = $instances[$members[$x]];
+                // Ordenados por inicio: pasado el fin de `$a` (con margen), ningún siguiente lo toca.
+                $limit = $a->range->end->ts + self::SLACK;
+
+                for ($y = $x + 1; $y < $count; $y++) {
+                    $b = $instances[$members[$y]];
+
+                    if ($b->range->start->ts >= $limit) {
+                        break;
+                    }
+
+                    if (self::conflicts($a, $b, $overlapAllowed)) {
+                        // La clave es la posición del par en la lista ordenada: deduplica el par que comparte
+                        // varios carriles y da el orden final con un ksort.
+                        $found[$members[$x] * $total + $members[$y]] = [$a, $b];
+                    }
+                }
+            }
+        }
+
+        if (count($lanes) > 1) {
+            ksort($found);
+        }
+
+        $pairs = array_values($found);
+
+        if ($wanted !== null) {
+            $pairs = array_values(array_filter($pairs, fn (array $pair) => isset($wanted[$pair[0]->instanceId]) || isset($wanted[$pair[1]->instanceId])));
         }
 
         return $pairs;
@@ -72,12 +128,13 @@ final class ConflictFinder
         $x = $a->event;
         $y = $b->event;
 
-        // Las ocurrencias de una serie, y los trozos de un evento con varios recursos, comparten id.
-        if ((string) $x->id === (string) $y->id || Collision::sameGroup($x, $y)) {
+        // Lo más barato y lo que más descarta, primero: la inmensa mayoría de los candidatos del barrido no se solapan.
+        if (! Collision::overlap($a, $b)) {
             return false;
         }
 
-        if (! Collision::overlap($a, $b)) {
+        // Las ocurrencias de una serie, y los trozos de un evento con varios recursos, comparten id.
+        if ((string) $x->id === (string) $y->id || Collision::sameGroup($x, $y)) {
             return false;
         }
 

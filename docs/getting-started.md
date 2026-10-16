@@ -179,7 +179,7 @@ protected function resources(): iterable
 }
 ```
 
-**Conflictos.** Con `highlight-conflicts` (`highlightConflicts()` en la clase base) los eventos que se solapan en el mismo recurso (los que no tienen ninguno, entre sí) llevan un icono, un borde y un texto solo para lectores de pantalla («En conflicto con «Reunión B»», traducción `conflict`). Un evento de fondo no cuenta salvo que diga `overlap: false`, y los del mismo `groupId` no chocan entre sí. El aviso es del evento, no de la columna.
+**Conflictos.** Con `highlight-conflicts` (`highlightConflicts()` en la clase base) los eventos que se solapan en el mismo recurso (los que no tienen ninguno, entre sí) llevan un icono, un borde y un texto solo para lectores de pantalla («En conflicto con «Reunión B»», traducción `conflict`; con más de tres conflictos nombra tres y cuenta el resto: «… y 4 más»). Un evento de fondo no cuenta salvo que diga `overlap: false`, y los del mismo `groupId` no chocan entre sí. El aviso es del evento, no de la columna.
 
 Las restricciones (que un evento movido o una selección deban quedar en horario laboral) y la búsqueda de huecos libres están en [KoreCalendar](kore-calendar.md#horario-laboral-y-disponibilidad).
 
