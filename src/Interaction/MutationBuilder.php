@@ -368,6 +368,10 @@ final class MutationBuilder
             endInstant: $endInstant,
             previousStartMarker: $range->start,
             previousEndMarker: $range->end,
+            // Qué ocurrencia es, si lo es: el consumidor no puede deducirlo del id.
+            seriesId: $original->seriesId,
+            recurrenceId: $original->recurrenceId,
+            occurrenceStart: $original->occurrenceStart,
         );
     }
 }

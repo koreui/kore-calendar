@@ -387,3 +387,116 @@ it('constrain() es público y trabaja sobre cualquier Builder', function () {
     expect($query->pluck('titulo')->all())->toBe(['dentro'])
         ->and($query)->toBeInstanceOf(Builder::class);
 });
+
+
+// ── Series (columna de regla) ────────────────────────────────────────
+
+it('con columna de regla, una serie entra aunque su primera ocurrencia ya haya acabado', function () {
+    Schema::create('reuniones', function ($table) {
+        $table->id();
+        $table->string('titulo');
+        $table->dateTime('starts_at');
+        $table->dateTime('ends_at')->nullable();
+        $table->string('rrule')->nullable();
+    });
+
+    $fila = fn (string $titulo, string $start, ?string $end, ?string $rrule = null) => DB::table('reuniones')->insert(['titulo' => $titulo, 'starts_at' => $start, 'ends_at' => $end, 'rrule' => $rrule]);
+
+    // La serie empezó en agosto: su primera ocurrencia acabó hace mucho, y las del rango las genera la expansión.
+    $fila('serie vieja', '2026-08-03 09:00:00', '2026-08-03 10:00:00', 'FREQ=WEEKLY;BYDAY=MO');
+    $fila('serie sin fin', '2026-08-03 09:00:00', null, 'FREQ=WEEKLY;BYDAY=MO');
+    // Una serie que EMPIEZA después del rango no puede tener nada dentro.
+    $fila('serie futura', '2026-11-02 09:00:00', '2026-11-02 10:00:00', 'FREQ=WEEKLY');
+    // Sin regla, el filtro de siempre.
+    $fila('suelto viejo', '2026-08-03 09:00:00', '2026-08-03 10:00:00');
+    $fila('suelto dentro', '2026-10-14 09:00:00', '2026-10-14 10:00:00');
+    $fila('suelto sin fin viejo', '2026-08-03 09:00:00', null);
+
+    $modelo = new class extends Model
+    {
+        protected $table = 'reuniones';
+
+        public $timestamps = false;
+    };
+
+    $con = (new EloquentSource($modelo::query(), fn (Model $m) => ['id' => $m->id, 'title' => $m->titulo, 'start' => $m->starts_at], rruleColumn: 'rrule'))->events(evDesde(), evHasta());
+    $sin = (new EloquentSource($modelo::query(), fn (Model $m) => ['id' => $m->id, 'title' => $m->titulo, 'start' => $m->starts_at]))->events(evDesde(), evHasta());
+
+    expect(evTitulos($con))->toBe(['serie sin fin', 'serie vieja', 'suelto dentro'])
+        // Sin la columna, nada cambia: las series viejas no se traen y nunca se expanden.
+        ->and(evTitulos($sin))->toBe(['suelto dentro']);
+});
+
+it('el modelo con series dice su columna de regla y el scope y la fuente la usan', function () {
+    Schema::create('citas_rep', function ($table) {
+        $table->id();
+        $table->string('titulo');
+        $table->dateTime('starts_at');
+        $table->dateTime('ends_at')->nullable();
+        $table->string('regla')->nullable();
+    });
+
+    DB::table('citas_rep')->insert([
+        ['titulo' => 'semanal', 'starts_at' => '2026-08-03 09:00:00', 'ends_at' => '2026-08-03 10:00:00', 'regla' => 'FREQ=WEEKLY;BYDAY=MO'],
+        ['titulo' => 'vieja', 'starts_at' => '2026-08-03 09:00:00', 'ends_at' => '2026-08-03 10:00:00', 'regla' => null],
+    ]);
+
+    $serie = new class extends Model
+    {
+        use \KoreUi\Calendar\Events\Concerns\HasCalendarEvents;
+
+        protected $table = 'citas_rep';
+
+        public $timestamps = false;
+
+        public function calendarRruleColumn(): ?string
+        {
+            return 'regla';
+        }
+
+        public function toCalendarEvent(): CalendarEvent
+        {
+            return CalendarEvent::make(id: $this->id, title: $this->titulo, start: $this->starts_at, end: $this->ends_at, rrule: $this->regla);
+        }
+    };
+
+    expect((new Cita)->calendarRruleColumn())->toBeNull()
+        ->and($serie->calendarRruleColumn())->toBe('regla')
+        ->and($serie::query()->overlapping(evDesde(), evHasta())->pluck('titulo')->all())->toBe(['semanal'])
+        ->and(evTitulos($serie::calendarSource()->events(evDesde(), evHasta())))->toBe(['semanal']);
+
+    // Y de punta a punta: la fila vieja con regla se expande en el rango.
+    $clock = new WallClock('UTC');
+    $instances = (new EventCollector($clock, new EventNormalizer($clock)))
+        ->collect([$serie::calendarSource()], new DateRange(Marker::parse('2026-10-12'), Marker::parse('2026-10-19')));
+
+    expect(array_map(fn ($i) => gmdate('Y-m-d H:i', $i->range->start->ts), $instances))->toBe(['2026-10-12 09:00']);
+});
+
+it('la consulta con regla sigue agrupando su condición: no se mezcla con las que ya traía', function () {
+    Schema::create('reuniones', function ($table) {
+        $table->id();
+        $table->string('titulo');
+        $table->dateTime('starts_at');
+        $table->dateTime('ends_at')->nullable();
+        $table->string('rrule')->nullable();
+        $table->boolean('activa')->default(true);
+    });
+
+    DB::table('reuniones')->insert([
+        ['titulo' => 'activa', 'starts_at' => '2026-08-03 09:00:00', 'ends_at' => '2026-08-03 10:00:00', 'rrule' => 'FREQ=WEEKLY', 'activa' => true],
+        // Con regla pero de otro tenant: el OR de la regla no puede saltarse el filtro de la consulta.
+        ['titulo' => 'inactiva', 'starts_at' => '2026-08-03 09:00:00', 'ends_at' => '2026-08-03 10:00:00', 'rrule' => 'FREQ=WEEKLY', 'activa' => false],
+    ]);
+
+    $modelo = new class extends Model
+    {
+        protected $table = 'reuniones';
+
+        public $timestamps = false;
+    };
+
+    $fuente = new EloquentSource($modelo::query()->where('activa', true), fn (Model $m) => ['id' => $m->id, 'title' => $m->titulo, 'start' => $m->starts_at], rruleColumn: 'rrule');
+
+    expect(evTitulos($fuente->events(evDesde(), evHasta())))->toBe(['activa']);
+});

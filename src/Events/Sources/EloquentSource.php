@@ -26,12 +26,16 @@ final class EloquentSource implements EventSource
      * @param  Builder|Closure(): Builder  $query
      * @param  Closure(\Illuminate\Database\Eloquent\Model): (CalendarEvent|array<string, mixed>)  $map
      * @param  ?string  $endColumn  `null` si el modelo solo tiene inicio.
+     * @param  ?string  $rruleColumn  La columna con la regla de repetición (RFC 5545), o `null` si el modelo
+     *                                no tiene series. Con ella, una fila con regla entra aunque su fin sea
+     *                                anterior al rango: la serie se expande después, en `EventCollector`.
      */
     public function __construct(
         private readonly Builder|Closure $query,
         private readonly Closure $map,
         private readonly string $startColumn = 'starts_at',
         private readonly ?string $endColumn = 'ends_at',
+        private readonly ?string $rruleColumn = null,
     ) {}
 
     public function events(CarbonImmutable $from, CarbonImmutable $to): iterable
@@ -45,7 +49,7 @@ final class EloquentSource implements EventSource
             ));
         }
 
-        self::constrain($query, $this->startColumn, $this->endColumn, $from, $to);
+        self::constrain($query, $this->startColumn, $this->endColumn, $from, $to, $this->rruleColumn);
 
         $events = [];
 
@@ -67,6 +71,11 @@ final class EloquentSource implements EventSource
      *   defecto (1 h con hora, 1 día completo), así que cuenta si empieza como
      *   mucho un día antes de `from`.
      * - Sin columna de fin: todo el modelo está en el segundo caso.
+     * - Con columna de regla (`$rruleColumn`): una fila con regla NO nula entra si
+     *   `start < to`, sea cual sea su fin. `start` y `end` son los de la PRIMERA
+     *   ocurrencia, que acabó hace meses; las que caen en el rango las genera la
+     *   expansión. Sin límite inferior a propósito: no se puede saber desde SQL
+     *   dónde acaba una regla (`UNTIL`, `COUNT`). Sin la columna, nada de esto cambia.
      *
      * Es un filtro grueso a propósito: tiene que sobrar, nunca faltar. Quien
      * decide si de verdad interseca es `EventCollector`, ya normalizado.
@@ -82,6 +91,7 @@ final class EloquentSource implements EventSource
         ?string $endColumn,
         DateTimeInterface $from,
         DateTimeInterface $to,
+        ?string $rruleColumn = null,
     ): void {
         $zone = date_default_timezone_get();
         $from = CarbonImmutable::instance($from)->setTimezone($zone);
@@ -92,21 +102,32 @@ final class EloquentSource implements EventSource
         // "ambiguous column".
         $start = $query->qualifyColumn($startColumn);
         $end = $endColumn === null ? null : $query->qualifyColumn($endColumn);
+        $rrule = $rruleColumn === null ? null : $query->qualifyColumn($rruleColumn);
 
         // Agrupado: el `OR` de dentro no debe mezclarse con las condiciones que ya
         // traía la consulta.
-        $query->where(function ($group) use ($start, $end, $from, $to, $earliest) {
+        $query->where(function ($group) use ($start, $end, $rrule, $from, $to, $earliest) {
             $group->where($start, '<', $to);
 
             if ($end === null) {
-                $group->where($start, '>=', $earliest);
+                $group->where(function ($either) use ($start, $rrule, $earliest) {
+                    $either->where($start, '>=', $earliest);
+
+                    if ($rrule !== null) {
+                        $either->orWhereNotNull($rrule);
+                    }
+                });
 
                 return;
             }
 
-            $group->where(function ($either) use ($start, $end, $from, $earliest) {
+            $group->where(function ($either) use ($start, $end, $rrule, $from, $earliest) {
                 $either->where($end, '>', $from)
                     ->orWhere(fn ($open) => $open->whereNull($end)->where($start, '>=', $earliest));
+
+                if ($rrule !== null) {
+                    $either->orWhereNotNull($rrule);
+                }
             });
         });
     }

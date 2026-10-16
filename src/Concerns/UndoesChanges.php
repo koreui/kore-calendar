@@ -50,10 +50,16 @@ trait UndoesChanges
     /**
      * Guarda el estado anterior y ofrece deshacerlo. Se llama con el cambio ya
      * aceptado y persistido. `$message` es el mismo texto del anuncio de aria-live.
+     *
+     * No se ofrece para una ocurrencia de una serie: su cambio puede ser un EXDATE
+     * más una excepción, un corte de la regla o un desplazamiento de la serie, y la
+     * instantánea (un solo evento con un solo id) no sabe deshacer ninguno. Además
+     * el id del evento no identifica la ocurrencia, que es lo que habría que volver
+     * a buscar.
      */
     protected function koreOfferUndo(string $type, EventMutation $mutation, string $message): void
     {
-        if (! $this->koreUndoable) {
+        if (! $this->koreUndoable || $mutation->isOccurrence()) {
             return;
         }
 

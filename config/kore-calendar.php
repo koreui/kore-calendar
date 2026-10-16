@@ -69,6 +69,10 @@ return [
         'window' => 60,                   // filas por ventana
     ],
 
+    'recurrence' => [
+        'max_occurrences' => 1000,        // por serie y vista: una regla FREQ=MINUTELY no tumba la página
+    ],
+
     'event_order' => 'start,-duration,allDay,title',
     'event_order_strict' => false,
     'now_indicator' => true,
@@ -191,6 +195,17 @@ return [
         'form_required' => 'Este campo es obligatorio',
         'form_invalid' => 'El valor no es válido',
         'form_end_before_start' => 'El fin no puede ser anterior al inicio',
+
+        // Series recurrentes: el diálogo que pregunta a qué alcanza el cambio de una
+        // ocurrencia. «Cancelar» es `form_cancel`.
+        'scope_move' => 'Mover un evento recurrente',
+        'scope_resize' => 'Cambiar la duración de un evento recurrente',
+        'scope_edit' => 'Editar un evento recurrente',
+        'scope_delete' => 'Eliminar un evento recurrente',
+        'scope_question' => '«:title» se repite. ¿Qué eventos de la serie quieres cambiar?',
+        'scope_this' => 'Solo este evento',
+        'scope_following' => 'Este y los siguientes',
+        'scope_all' => 'Todos los eventos',
 
         // Los colores del selector (tokens de kore-ui).
         'color_primary' => 'Primario',

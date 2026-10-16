@@ -8,6 +8,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use KoreUi\Calendar\Concerns\ManagesEventForm;
+use KoreUi\Calendar\Concerns\ManagesRecurrence;
 use KoreUi\Calendar\Concerns\UndoesChanges;
 use KoreUi\Calendar\Events\CalendarEvent;
 use KoreUi\Calendar\Events\EventCollector;
@@ -75,6 +76,12 @@ use Throwable;
  *
  * Deshacer (`->undoable()`): tras mover o redimensionar, un toast con «Deshacer»
  * que repite el cambio al revés con el mismo hook de persistencia.
+ *
+ * Series recurrentes: mover, redimensionar, editar o eliminar una ocurrencia no
+ * persiste nada hasta que el usuario elige el alcance (solo esta, esta y las
+ * siguientes, toda la serie) en un diálogo. La acción queda pendiente en el
+ * servidor (`$koreRecurrencePending`, `#[Locked]`) y se repite entera, con la
+ * misma validación, cuando llega la elección (`applyRecurrenceScope()`).
  */
 abstract class KoreCalendar extends Component
 {
@@ -82,9 +89,11 @@ abstract class KoreCalendar extends Component
     // (WithBulkActions), así que el toast llega al mismo gestor del navegador.
     use InteractsWithFeedback;
 
-    // El formulario de evento (crear, editar, eliminar) y deshacer viven aparte por
-    // tamaño; usan las piezas de esta clase (koreFind, koreInstances, korePersist…).
+    // El formulario de evento (crear, editar, eliminar), el alcance de las series
+    // recurrentes y deshacer viven aparte por tamaño; usan las piezas de esta clase
+    // (koreFind, koreInstances, korePersist…).
     use ManagesEventForm;
+    use ManagesRecurrence;
     use UndoesChanges;
 
     #[Url(as: 'view', except: '')]
@@ -186,13 +195,30 @@ abstract class KoreCalendar extends Component
     /**
      * Mueve un evento (arrastrándolo, o con el teclado).
      *
+     * @param  string|int  $id  El `instanceId` que el servidor pinta en `data-kore-instance`. También vale el id del
+     *                          evento (lo que mandaba el cliente antes de las series), salvo en una serie: todas sus
+     *                          ocurrencias comparten id y con él no se sabe cuál es, así que se rechaza.
      * @param  int  $start  Marker donde cae el INICIO del evento, no el punto donde se agarró.
      * @param  bool  $allDay  Modalidad del destino: el carril de todo el día o una celda con hora.
      * @param  string|int|null  $resourceId  Recurso (columna o fila) donde se soltó. `null` en las vistas sin recursos.
      * @param  string|int|null  $fromResourceId  Recurso del que se agarró. Hace falta en un evento con varios.
-     * @return array{ok: bool, message: string} `message` es el anuncio para aria-live si `ok`, o el motivo si no.
+     * @return array{ok: bool, message: string, needsScope?: true} `message` es el anuncio para aria-live si `ok`, o el motivo si no.
+     *                                                           `needsScope`: era una ocurrencia, no se guardó nada y se abrió el diálogo de alcance.
      */
     public function moveEvent(string|int $id, int $start, bool $allDay, string|int|null $resourceId = null, string|int|null $fromResourceId = null): array
+    {
+        return $this->koreMove($id, $start, $allDay, $resourceId, $fromResourceId);
+    }
+
+    /**
+     * El cuerpo de `moveEvent()`, con el alcance si ya se eligió. Lo repite
+     * `applyRecurrenceScope()` con los mismos argumentos que se validaron la
+     * primera vez, pero volviendo a resolverlo todo: entre el gesto y la elección
+     * el evento pudo cambiar o desaparecer.
+     *
+     * @return array{ok: bool, message: string, needsScope?: true}
+     */
+    protected function koreMove(string|int $id, int $start, bool $allDay, string|int|null $resourceId, string|int|null $fromResourceId, ?string $scope = null): array
     {
         $settings = $this->koreSettingsResolved();
 
@@ -231,8 +257,21 @@ abstract class KoreCalendar extends Component
             return $this->koreUnchanged();
         }
 
-        $refusal = (new MutationValidator($settings))->validateMove($mutation, $instances)
-            ?? $this->korePersist(fn () => $this->persistMove($original->event, $mutation));
+        $refusal = (new MutationValidator($settings))->validateMove($mutation, $instances);
+
+        // Válido pero sin alcance: no se guarda nada. Se pregunta DESPUÉS de validar para
+        // no hacer elegir entre tres opciones un cambio que de todas formas se rechazaría.
+        if ($refusal === null && $scope === null && $original->isOccurrence()) {
+            return $this->koreAskScope('move', $original, [
+                'start' => $start, 'allDay' => $allDay, 'resourceId' => $resourceId, 'fromResourceId' => $fromResourceId,
+            ]);
+        }
+
+        if ($scope !== null && $original->isOccurrence()) {
+            $mutation = $mutation->withScope($scope);
+        }
+
+        $refusal ??= $this->korePersist(fn () => $this->persistMove($original->event, $mutation));
 
         if ($refusal !== null) {
             return $this->koreReject('move_rejected', $refusal);
@@ -243,16 +282,23 @@ abstract class KoreCalendar extends Component
         $announcement = $this->koreAnnounce('event_moved', $original->event, $mutation->startMarker, $mutation->allDay, $settings);
         $this->koreOfferUndo('move', $mutation, $announcement);
 
-        return ['ok' => true, 'message' => $announcement];
+        return $this->koreDone($announcement, $scope);
     }
 
     /**
      * Cambia la duración de un evento arrastrando uno de sus bordes.
      *
+     * @param  string|int  $id  Como en `moveEvent()`: el `instanceId`.
      * @param  int  $edge  Marker del borde nuevo: el fin (exclusivo) o, con `$fromStart`, el inicio.
-     * @return array{ok: bool, message: string}
+     * @return array{ok: bool, message: string, needsScope?: true}
      */
     public function resizeEvent(string|int $id, int $edge, bool $fromStart = false): array
+    {
+        return $this->koreResize($id, $edge, $fromStart);
+    }
+
+    /** @return array{ok: bool, message: string, needsScope?: true} */
+    protected function koreResize(string|int $id, int $edge, bool $fromStart, ?string $scope = null): array
     {
         $settings = $this->koreSettingsResolved();
 
@@ -277,8 +323,17 @@ abstract class KoreCalendar extends Component
             return $this->koreUnchanged();
         }
 
-        $refusal = (new MutationValidator($settings))->validateResize($mutation, $instances)
-            ?? $this->korePersist(fn () => $this->persistResize($original->event, $mutation));
+        $refusal = (new MutationValidator($settings))->validateResize($mutation, $instances);
+
+        if ($refusal === null && $scope === null && $original->isOccurrence()) {
+            return $this->koreAskScope('resize', $original, ['edge' => $edge, 'fromStart' => $fromStart]);
+        }
+
+        if ($scope !== null && $original->isOccurrence()) {
+            $mutation = $mutation->withScope($scope);
+        }
+
+        $refusal ??= $this->korePersist(fn () => $this->persistResize($original->event, $mutation));
 
         if ($refusal !== null) {
             return $this->koreReject('resize_rejected', $refusal);
@@ -296,7 +351,7 @@ abstract class KoreCalendar extends Component
         $announcement = $this->koreAnnounce($fromStart ? 'event_resized_start' : 'event_resized', $original->event, $when, $mutation->allDay, $settings);
         $this->koreOfferUndo('resize', $mutation, $announcement);
 
-        return ['ok' => true, 'message' => $announcement];
+        return $this->koreDone($announcement, $scope);
     }
 
     /**
@@ -358,6 +413,10 @@ abstract class KoreCalendar extends Component
      *
      * Por defecto rechaza, explicando que falta implementarlo: un calendario
      * `editable()` que no guarda nada no debe parecer que funciona.
+     *
+     * Con una ocurrencia de una serie llega `$mutation->scope` (`this`, `following` o `all`)
+     * y la forma de guardar cada uno está en `RecurrenceEditor`. `$event` es la ocurrencia
+     * (con SUS fechas, sin regla): la serie la carga el consumidor con `$mutation->seriesId`.
      *
      * @return bool|string|null
      */
@@ -434,6 +493,10 @@ abstract class KoreCalendar extends Component
      * actual (el de `events()`); `$data` tiene la forma de `createEvent()`, con `mode`
      * 'edit' y su `id`. Un evento con varios recursos conserva todos si no se toca el primero.
      *
+     * Si es una ocurrencia de una serie, `$data` añade `scope` (`this`, `following`, `all`),
+     * `seriesId`, `recurrenceId` (`Marker`, su inicio original), `occurrenceStart` (ese
+     * inicio como instante) y `deltaSeconds` (cuánto se movió el inicio, para `all`).
+     *
      * @param  array<string, mixed>  $data
      * @return bool|string|null
      */
@@ -444,6 +507,12 @@ abstract class KoreCalendar extends Component
 
     /**
      * Elimina un evento, después de que el usuario lo confirmara en el formulario.
+     *
+     * Se llama con un segundo argumento, `array $data`, que este método no declara para
+     * no romper a quien ya lo sobrescribe con un solo parámetro: declara
+     * `deleteEvent(CalendarEvent $event, array $data = [])` para recibirlo. Trae `mode`
+     * ('delete'), `id` y, en una ocurrencia, `scope`, `seriesId`, `recurrenceId` y
+     * `occurrenceStart` (las mismas claves que `updateEvent()`).
      *
      * @return bool|string|null
      */
@@ -474,13 +543,31 @@ abstract class KoreCalendar extends Component
         );
     }
 
-    /** @param  list<EventInstance>  $instances */
+    /**
+     * Resuelve lo que manda el cliente entre las instancias de la vista.
+     *
+     * Primero por `instanceId` (lo que pinta `data-kore-instance`): es lo único que
+     * distingue las ocurrencias de una serie, que comparten `event->id`. Si no, por
+     * el id del evento, que es lo que mandaban los clientes anteriores a las series.
+     * Pero ese segundo camino no vale para una ocurrencia: con un id de serie no hay
+     * forma de saber de cuál se habla, y elegir la primera movería una al azar.
+     *
+     * @param  list<EventInstance>  $instances
+     */
     protected static function koreFind(array $instances, string|int $id): ?EventInstance
     {
         // Como string: 1 y '1' son el mismo evento (el id viaja por JSON).
+        $id = (string) $id;
+
         foreach ($instances as $instance) {
-            if ((string) $instance->event->id === (string) $id) {
+            if ($instance->instanceId === $id) {
                 return $instance;
+            }
+        }
+
+        foreach ($instances as $instance) {
+            if ((string) $instance->event->id === $id) {
+                return $instance->isOccurrence() ? null : $instance;
             }
         }
 
@@ -575,6 +662,22 @@ abstract class KoreCalendar extends Component
         $this->skipRender();
 
         return ['ok' => true, 'message' => ''];
+    }
+
+    /**
+     * El resultado de un movimiento aceptado. Si llegó tras el diálogo de alcance,
+     * el gesto que lo empezó ya terminó (su respuesta fue `needsScope`) y nadie
+     * lee este anuncio en el navegador: sale también en un toast.
+     *
+     * @return array{ok: true, message: string}
+     */
+    private function koreDone(string $announcement, ?string $scope): array
+    {
+        if ($scope !== null) {
+            $this->toast()->success($announcement)->send();
+        }
+
+        return ['ok' => true, 'message' => $announcement];
     }
 
     /** El anuncio de aria-live: el título del evento y cuándo queda. Texto plano, no HTML. */

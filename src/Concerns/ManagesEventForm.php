@@ -9,6 +9,7 @@ use KoreUi\Calendar\Interaction\EventFormPayload;
 use KoreUi\Calendar\Interaction\Messages;
 use KoreUi\Calendar\Interaction\Selection;
 use KoreUi\Calendar\Overlays\EventForm;
+use KoreUi\Calendar\Time\Marker;
 use Livewire\Attributes\On;
 
 /**
@@ -27,6 +28,14 @@ trait ManagesEventForm
 {
     /** Con `eventForm()`: pulsar un evento o seleccionar un rango abre el formulario. */
     protected bool $koreEventForm = false;
+
+    /**
+     * La instancia que se pulsó, mientras dura `clickEvent()`. `onEventClick()` recibe
+     * el `CalendarEvent` y no la instancia (su firma es la de antes de las series),
+     * pero el formulario de una ocurrencia necesita saber CUÁL es: el evento de una
+     * ocurrencia lleva el id de la serie, igual que las demás.
+     */
+    protected ?EventInstance $koreClicked = null;
 
     // ── Acciones (llegan del navegador) ─────────────────────────────────
 
@@ -55,7 +64,13 @@ trait ManagesEventForm
             return;
         }
 
-        $this->onEventClick($original->event);
+        $this->koreClicked = $original;
+
+        try {
+            $this->onEventClick($original->event);
+        } finally {
+            $this->koreClicked = null;
+        }
     }
 
     /**
@@ -87,15 +102,24 @@ trait ManagesEventForm
 
     // ── Piezas ──────────────────────────────────────────────────────────
 
-    /** @param  array<string, mixed>  $data */
-    private function koreSaveEvent(string $mode, array $data): void
+    /**
+     * Crea, guarda o elimina lo que dijo el formulario. `$scope` solo llega al repetir
+     * la acción tras el diálogo de alcance (`applyRecurrenceScope()`): una ocurrencia
+     * sin alcance no se guarda, se pregunta.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function koreSaveEvent(string $mode, array $data, ?string $scope = null): void
     {
         $settings = $this->koreSettingsResolved();
         $rejected = ['create' => 'create_rejected', 'edit' => 'update_rejected', 'delete' => 'delete_rejected'][$mode];
         $original = null;
+        $instance = null;
 
         if ($mode !== 'create') {
-            $id = $data['id'] ?? null;
+            // Una ocurrencia se identifica por su `instanceId`: el id del evento es el de
+            // la serie y `koreFind()` lo rechaza. Para un evento normal basta con el id.
+            $id = $data['instanceId'] ?? $data['id'] ?? null;
             $instance = is_string($id) || is_int($id) ? self::koreFind($this->koreInstances($settings), $id) : null;
 
             if ($instance === null) {
@@ -127,10 +151,42 @@ trait ManagesEventForm
             }
         }
 
+        $occurrence = $instance?->isOccurrence() === true;
+
+        // Ya validado, pero sin alcance: se pregunta. Se guardan los datos limpios
+        // sin los instantes (`startAt`/`endAt`): al repetir se vuelven a comprobar
+        // y a calcular, y Livewire no lleva un Carbon en una propiedad pública.
+        if ($occurrence && $scope === null) {
+            $this->koreAskScope($mode, $instance, ['data' => $clean === null ? [] : array_diff_key($clean, ['startAt' => true, 'endAt' => true])]);
+
+            return;
+        }
+
+        $deleteData = ['mode' => 'delete', 'id' => $original?->id];
+
+        if ($occurrence) {
+            $series = [
+                'scope' => $scope,
+                'seriesId' => $instance->seriesId,
+                'recurrenceId' => $instance->recurrenceId,
+                'occurrenceStart' => $instance->occurrenceStart,
+            ];
+
+            $deleteData += $series;
+
+            if ($clean !== null) {
+                // Cuánto se movió el inicio de ESTA ocurrencia respecto a como se abrió el
+                // formulario: lo que `all` suma al inicio de la serie. No sale de restarle
+                // `recurrenceId`, porque una ocurrencia ya modificada no empieza donde nació.
+                $clean = [...$clean, ...$series, 'deltaSeconds' => Marker::parse($clean['start'])->ts - $instance->range->start->ts];
+            }
+        }
+
         $refusal = $this->korePersist(fn () => match ($mode) {
             'create' => $this->createEvent($clean),
             'edit' => $this->updateEvent($original, $clean),
-            'delete' => $this->deleteEvent($original),
+            // Con `$data` como segundo argumento, que `deleteEvent()` no declara (ver su nota).
+            'delete' => $this->deleteEvent($original, $deleteData),
         });
 
         if ($refusal !== null) {
@@ -142,6 +198,12 @@ trait ManagesEventForm
         $done = ['create' => 'event_created', 'edit' => 'event_updated', 'delete' => 'event_deleted'][$mode];
 
         $this->toast()->success(Messages::get($done, ['title' => $clean['title'] ?? $original->title]))->send();
+
+        // El formulario de una ocurrencia no se cierra solo: espera al diálogo de alcance. Si
+        // el evento ya no era una serie cuando llegó el aviso, no habrá diálogo que lo cierre.
+        if ($scope === null && isset($data['instanceId'])) {
+            $this->dispatch('kore:close', force: true);
+        }
     }
 
     /** Abre el formulario de un evento nuevo con el rango que se seleccionó. */
@@ -163,6 +225,10 @@ trait ManagesEventForm
         // por defecto y si el evento traía fin, que el DTO por sí solo no sabe.
         $instance = (new EventNormalizer($settings->clock, $settings->defaultTimedSeconds, $settings->defaultAllDayDays))->normalize($event);
 
+        // Una ocurrencia: el formulario sabe cuál es (`instanceId`) y que no se cierra
+        // al guardar, porque lo siguiente es el diálogo de alcance, encima de él.
+        $clicked = $this->koreClicked?->event === $event && $this->koreClicked->isOccurrence() ? $this->koreClicked : null;
+
         $this->koreOpenForm('edit', [
             'eventId' => $event->id,
             'title' => $event->title,
@@ -170,6 +236,7 @@ trait ManagesEventForm
             ...self::koreFormRange($instance),
             'resourceId' => $event->resourceIds[0] ?? null,
             'color' => $event->color,
+            ...($clicked === null ? [] : ['instanceId' => $clicked->instanceId, 'recurring' => true]),
         ]);
     }
 

@@ -27,6 +27,23 @@ use KoreUi\Calendar\Time\Marker;
  *   mide siempre 86 400 s, así que un movimiento de «+1 día» vale lo mismo la
  *   noche del cambio de horario.
  * - `previous*`: cómo estaba el evento antes, para auditoría o «deshacer».
+ *
+ * Las ocurrencias de una serie (fase 8) llevan además cuatro campos. Todas
+ * comparten `event->id` (el de la serie), así que el id no dice cuál se tocó:
+ *
+ * - `scope`: a qué alcanza el cambio, `this` (solo esa ocurrencia), `following`
+ *   (esa y las siguientes) o `all` (la serie entera). `null` en un evento normal.
+ * - `seriesId`: la serie de la que sale. `null` en un evento normal.
+ * - `recurrenceId`: el inicio ORIGINAL de la ocurrencia, en hora de pared: qué
+ *   ocurrencia es, aunque ya se hubiera movido antes.
+ * - `occurrenceStart`: ese mismo inicio como instante.
+ *
+ * **Con `all`, la mutación es el DESPLAZAMIENTO de la serie, no la nueva
+ * posición de la ocurrencia.** `start` y `end` son dónde queda ESA ocurrencia
+ * (sirven para validar y para el anuncio); lo que hay que guardar en la serie es
+ * `deltaSeconds` sumado a su `start` (`RecurrenceEditor::shift()`). Guardar
+ * `$mutation->start` como inicio de la serie la movería a la fecha de la
+ * ocurrencia y borraría todas las anteriores.
  */
 final readonly class EventMutation
 {
@@ -50,7 +67,34 @@ final readonly class EventMutation
         public CarbonImmutable $endInstant,
         public Marker $previousStartMarker,
         public Marker $previousEndMarker,
+        public ?string $scope = null,
+        public string|int|null $seriesId = null,
+        public ?Marker $recurrenceId = null,
+        public ?CarbonImmutable $occurrenceStart = null,
     ) {}
+
+    /** Es el cambio de una ocurrencia de una serie, no el de un evento normal. */
+    public function isOccurrence(): bool
+    {
+        return $this->seriesId !== null;
+    }
+
+    /**
+     * La misma mutación con el alcance que el usuario eligió. Es una copia (la
+     * clase es inmutable): la mutación original sigue siendo la que se validó.
+     *
+     * @param  'this'|'following'|'all'  $scope
+     */
+    public function withScope(string $scope): self
+    {
+        return new self(
+            $this->event, $this->start, $this->end, $this->allDay, $this->resourceIds,
+            $this->previousStart, $this->previousEnd, $this->previousAllDay, $this->previousResourceIds,
+            $this->startMarker, $this->endMarker, $this->deltaSeconds, $this->endInstant,
+            $this->previousStartMarker, $this->previousEndMarker,
+            $scope, $this->seriesId, $this->recurrenceId, $this->occurrenceStart,
+        );
+    }
 
     /** Día del inicio, `Y-m-d`, en la zona de la vista. */
     public function startDate(): string

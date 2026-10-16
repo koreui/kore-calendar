@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use KoreUi\Calendar\Overlays\EventForm;
+use KoreUi\Calendar\Overlays\RecurrenceScope;
 use Livewire\Livewire;
 
 class KoreCalendarServiceProvider extends ServiceProvider
@@ -31,6 +32,9 @@ class KoreCalendarServiceProvider extends ServiceProvider
         // El formulario de evento es un overlay de kore-ui: lo abre el calendario
         // con `kore:open` por este nombre, y el OverlayManager lo resuelve con él.
         Livewire::component('kore-calendar-event-form', EventForm::class);
+
+        // Y el diálogo que pregunta el alcance de un cambio en una serie recurrente.
+        Livewire::component('kore-calendar-recurrence-scope', RecurrenceScope::class);
 
         Route::get('/vendor/kore-calendar/kore-calendar.js', function () {
             $bundle = __DIR__.'/../dist/kore-calendar.js';

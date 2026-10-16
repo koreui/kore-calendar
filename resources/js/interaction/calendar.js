@@ -22,6 +22,11 @@ import { DAY, computeMove, computeResize, computeSelection, hitFrom } from './mu
  *   `$wire.clickEvent(id)`. El servidor decide qué abre (el formulario, o lo que
  *   haga el `onEventClick()` del consumidor). Solo si el evento lleva
  *   `data-clickable`; uno con `href` navega solo.
+ * - Los tres viajes mandan el `instanceId` del nodo (`data-kore-instance`), no el id
+ *   del evento: las ocurrencias de una serie comparten id. Si el servidor responde
+ *   `needsScope` (era una ocurrencia y abrió el diálogo de alcance), no se guardó
+ *   nada y no hay nada que anunciar: solo se quita la previsualización, y la
+ *   acción se completa por otro camino cuando el usuario elige.
  */
 export default function KoreCalendarInteraction(config = {}) {
     return {
@@ -245,7 +250,7 @@ export default function KoreCalendarInteraction(config = {}) {
                     await this.$wire.selectRange(target.start, target.end, target.allDay, target.resource ?? null);
                 }
 
-                if (result?.message) this.say(result.message);
+                if (result?.message && !result.needsScope) this.say(result.message);
             } catch (e) {
                 // Un fallo de red es un rechazo: el servidor no movió nada.
             } finally {
@@ -256,9 +261,7 @@ export default function KoreCalendarInteraction(config = {}) {
                 // Con el teclado, el foco vuelve al evento: el morph pudo cambiar su
                 // nodo, y sin esto el foco cae al body y se pierde el sitio.
                 if (fromKeyboard && g.event) {
-                    this.$nextTick(() => {
-                        this.$root.querySelector(`[data-kore-event="${CSS.escape(String(g.event.id))}"]`)?.focus();
-                    });
+                    this.$nextTick(() => focusEvent(this.$root, g.event));
                 }
             }
         },
@@ -340,10 +343,23 @@ export default function KoreCalendarInteraction(config = {}) {
     };
 }
 
+/**
+ * Devuelve el foco al evento tras el morph. Por `instanceId` (es lo que distingue una
+ * ocurrencia de las demás de su serie); si no está, por el id del evento: al mover uno
+ * normal su `instanceId` cambia con el inicio, pero el id no.
+ */
+function focusEvent(root, ev) {
+    const by = (attr, value) => root.querySelector(`[${attr}="${CSS.escape(String(value))}"]`);
+
+    (by('data-kore-instance', ev.id) ?? by('data-kore-event', ev.eventId ?? ev.id))?.focus();
+}
+
 /** Los datos de un evento desde su nodo (los pone el servidor). */
 export function readEvent(el) {
     return {
-        id: el.dataset.koreEvent,
+        // El `instanceId`, que es lo que se manda al servidor; `eventId`, para devolver el foco.
+        id: el.dataset.koreInstance ?? el.dataset.koreEvent,
+        eventId: el.dataset.koreEvent,
         title: el.dataset.title ?? '',
         start: Number(el.dataset.start),
         end: Number(el.dataset.end),

@@ -5,7 +5,16 @@
  * Solo los eventos que el servidor pintó con `data-clickable` (un calendario con
  * `eventForm()` o un `onEventClick()` propio). Uno con `href` es un enlace y
  * navega solo: abrir además el formulario sería hacer dos cosas con un clic.
+ *
+ * Lo que se manda al servidor es el `instanceId` (`data-kore-instance`), no el id del
+ * evento: todas las ocurrencias de una serie comparten `data-kore-event`, y con él el
+ * servidor no sabría cuál se pulsó. Sin ese atributo (HTML anterior a las series), el id.
  */
+
+/** Qué identifica a ESTE nodo ante el servidor. */
+function instanceOf(el) {
+    return el.dataset.koreInstance ?? el.dataset.koreEvent;
+}
 
 /** El nodo de un evento pulsable que contiene `target`, o `null`. */
 function clickableEl(target) {
@@ -23,7 +32,9 @@ function clickableEl(target) {
 export function clickedEventId(target) {
     if (target?.closest?.('[data-kore-resize]')) return null;
 
-    return clickableEl(target)?.dataset.koreEvent ?? null;
+    const el = clickableEl(target);
+
+    return el ? instanceOf(el) : null;
 }
 
 /**
@@ -41,8 +52,8 @@ export function keyedEventId(e) {
     const el = clickableEl(e.target);
     if (!el || el !== e.target) return null;
 
-    if (e.key === 'Enter') return el.dataset.koreEvent;
-    if (e.key === ' ' && !el.hasAttribute('data-movable')) return el.dataset.koreEvent;
+    if (e.key === 'Enter') return instanceOf(el);
+    if (e.key === ' ' && !el.hasAttribute('data-movable')) return instanceOf(el);
 
     return null;
 }

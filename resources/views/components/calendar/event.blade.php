@@ -8,6 +8,9 @@
     mover, es enfocable y lleva sus datos en data-* para KoreCalendarInteraction
     (Espacio para agarrarlo con el teclado). Si se puede redimensionar, lleva un asa.
 
+    `data-kore-event` es el id del evento, que comparten todas las ocurrencias de una
+    serie; `data-kore-instance`, el que distingue cada una y el que se manda al servidor.
+
     Si el calendario tiene clic activo (eventForm() o un onEventClick() propio), un
     evento sin `url` también es enfocable aunque no se pueda mover: lleva
     data-clickable y Intro (o un clic) lo abre.
@@ -42,6 +45,7 @@
     @if ($event->url) href="{{ $event->url }}" @endif
     data-kore-calendar-event="{{ $event->id }}"
     data-kore-event="{{ $event->id }}"
+    data-kore-instance="{{ $instance->instanceId }}"
     data-title="{{ $event->title }}"
     data-start="{{ $instance->range->start->ts }}"
     data-end="{{ $instance->range->end->ts }}"

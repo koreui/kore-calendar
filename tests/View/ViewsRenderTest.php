@@ -63,3 +63,20 @@ it('el "+N más" abre un diálogo con los eventos de la celda', function () {
 
     expect($html)->toContain('+1 más')->toContain('role="dialog"')->toContain('aria-haspopup="dialog"');
 });
+
+it('cada evento lleva su instanceId: las ocurrencias de una serie comparten el id y solo ese las distingue', function () {
+    $calendar = CalendarRenderer::render(CalendarSettings::make(['date' => '2026-10-16', 'timezone' => 'UTC']), [
+        ['id' => 'serie', 'title' => 'Standup', 'start' => '2026-10-12 09:00', 'end' => '2026-10-12 09:30', 'rrule' => 'FREQ=DAILY;COUNT=3'],
+        ['id' => 7, 'title' => 'Suelto', 'start' => '2026-10-14 15:00'],
+    ]);
+
+    $html = (string) $this->blade('<x-kore::calendar.month :calendar="$calendar" />', ['calendar' => $calendar]);
+
+    preg_match_all('/data-kore-instance="([^"]+)"/', $html, $instancias);
+    $monday = \KoreUi\Calendar\Time\Marker::parse('2026-10-12 09:00')->ts;
+
+    expect($instancias[1])->toContain("serie:{$monday}", 'serie:'.($monday + 86_400), 'serie:'.($monday + 2 * 86_400))
+        ->and($instancias[1])->toContain('7:'.\KoreUi\Calendar\Time\Marker::parse('2026-10-14 15:00')->ts)
+        // El id del evento sigue ahí (el foco, los tests y el HTML anterior lo usan) y es el mismo en las tres.
+        ->and(substr_count($html, 'data-kore-event="serie"'))->toBe(3);
+});

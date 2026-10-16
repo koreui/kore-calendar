@@ -460,3 +460,68 @@ it('a quién responde, el modo y el evento están bloqueados', function (string 
     'evento' => ['eventId', 99],
     'recursos' => ['resources', [['value' => '9', 'label' => 'x']]],
 ])->throws(CannotUpdateLockedPropertyException::class);
+
+// ── Una ocurrencia de una serie ────────────────────────────────────────
+
+/** Los argumentos con los que el calendario abre el formulario de una ocurrencia. */
+function efOccurrence(array $over = []): array
+{
+    return efArgs(['mode' => 'edit', 'eventId' => 's', 'title' => 'Standup', 'instanceId' => 's:1760432400', 'recurring' => true, ...$over]);
+}
+
+it('guardar una ocurrencia avisa con su instanceId y NO cierra: el diálogo de alcance se apila encima', function () {
+    $t = Livewire::test(EventForm::class, efOccurrence())
+        ->set('title', 'Standup largo')
+        ->call('save')
+        ->assertHasNoErrors()
+        ->assertNotDispatched('kore:close');
+
+    expect(efDispatched($t, EventForm::SAVED))->toBe([
+        'calendar' => EF_CAL,
+        'data' => [
+            'mode' => 'edit',
+            'id' => 's',
+            'title' => 'Standup largo',
+            'allDay' => false,
+            'start' => '2026-10-15 10:00:00',
+            'end' => '2026-10-15 11:00:00',
+            'resourceId' => null,
+            'color' => null,
+            'instanceId' => 's:1760432400',
+        ],
+    ]);
+});
+
+it('eliminar una ocurrencia no pide una confirmación aparte: el alcance ya lo es', function () {
+    $t = Livewire::test(EventForm::class, efOccurrence())
+        ->call('delete')
+        ->assertNotDispatched('kore:open')
+        ->assertNotDispatched('kore:close');
+
+    expect(efDispatched($t, EventForm::SAVED))->toBe([
+        'calendar' => EF_CAL,
+        'data' => ['mode' => 'delete', 'id' => 's', 'instanceId' => 's:1760432400'],
+    ]);
+});
+
+it('sin instanceId no es una ocurrencia, aunque se diga: nada que identificar', function () {
+    $t = Livewire::test(EventForm::class, efOccurrence(['instanceId' => null]))
+        ->set('title', 'x')
+        ->call('save')
+        ->assertDispatched('kore:close');
+
+    expect(efDispatched($t, EventForm::SAVED)['data'])->not->toHaveKey('instanceId');
+
+    // Y crear nunca lo es.
+    $crear = Livewire::test(EventForm::class, efArgs(['instanceId' => 's:1', 'recurring' => true]))->set('title', 'x')->call('save');
+
+    expect(efDispatched($crear, EventForm::SAVED)['data'])->not->toHaveKey('instanceId');
+    $crear->assertDispatched('kore:close');
+});
+
+it('la ocurrencia que se edita está bloqueada', function (string $propiedad, mixed $valor) {
+    Livewire::test(EventForm::class, efOccurrence())->set($propiedad, $valor);
+})->with([
+    'instanceId' => ['instanceId', 's:1'],
+    'recurring' => ['recurring', false],
+])->throws(CannotUpdateLockedPropertyException::class);

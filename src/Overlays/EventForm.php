@@ -27,6 +27,13 @@ use Livewire\Attributes\Locked;
  *
  * Los argumentos con los que se abre (`mount`) vienen del calendario y llegan
  * con el fin ya exclusivo, tal como lo guarda el motor.
+ *
+ * Una ocurrencia de una serie (`recurring`) no se cierra al guardar ni al eliminar:
+ * el calendario responde abriendo el diálogo de alcance (`RecurrenceScope`) encima
+ * de este formulario, y es ese diálogo el que cierra la pila entera. Dejarlo
+ * abierto evita abrir un overlay mientras otro se cierra, y si el usuario cancela
+ * el alcance vuelve a lo que estaba escribiendo. Tampoco pide confirmación para
+ * eliminar: elegir el alcance en un diálogo que dice «Eliminar» ya lo es.
  */
 class EventForm extends OverlayComponent
 {
@@ -51,6 +58,14 @@ class EventForm extends OverlayComponent
 
     #[Locked]
     public string|int|null $eventId = null;
+
+    /** La ocurrencia que se edita (`instanceId`), si es de una serie: el id del evento es el de la serie. */
+    #[Locked]
+    public ?string $instanceId = null;
+
+    /** Es una ocurrencia: guardar y eliminar piden alcance, y el formulario espera a la respuesta abierto. */
+    #[Locked]
+    public bool $recurring = false;
 
     /** El título con el que se abrió: el del diálogo de eliminar no cambia mientras se escribe. */
     #[Locked]
@@ -107,11 +122,16 @@ class EventForm extends OverlayComponent
         array $resources = [],
         ?string $locale = null,
         int $firstDay = 1,
+        ?string $instanceId = null,
+        bool $recurring = false,
     ): void {
         $this->calendar = $calendar;
         // Lo que no es 'edit' es crear: el modo decide si hay botón de eliminar.
         $this->mode = $mode === 'edit' ? 'edit' : 'create';
         $this->eventId = $this->mode === 'edit' ? $eventId : null;
+        // Solo se edita una ocurrencia con su `instanceId`: sin él no habría forma de saber cuál.
+        $this->instanceId = $this->mode === 'edit' && $recurring && $instanceId !== null && $instanceId !== '' ? $instanceId : null;
+        $this->recurring = $this->instanceId !== null;
         $this->eventTitle = $title;
         $this->title = $title;
         $this->allDay = $allDay;
@@ -173,6 +193,13 @@ class EventForm extends OverlayComponent
             return;
         }
 
+        if ($this->recurring) {
+            // Sin cerrar: ver la nota de la clase.
+            $this->dispatch(self::SAVED, calendar: $this->calendar, data: $this->payload());
+
+            return;
+        }
+
         $this->closeWith([[self::SAVED, ['calendar' => $this->calendar, 'data' => $this->payload()]]]);
     }
 
@@ -183,6 +210,12 @@ class EventForm extends OverlayComponent
     public function delete(): void
     {
         if ($this->mode !== 'edit') {
+            return;
+        }
+
+        if ($this->recurring) {
+            $this->dispatch(self::SAVED, calendar: $this->calendar, data: $this->deletePayload());
+
             return;
         }
 
@@ -206,8 +239,14 @@ class EventForm extends OverlayComponent
         // de transición cada uno en overlay.js). Cerrar la pila entera es lo que no
         // depende de en qué punto de esa transición caiga: el evento ya no existe y el
         // formulario no tiene a dónde volver. Es lo único que difiere de `closeWith()`.
-        $this->dispatch(self::SAVED, calendar: $this->calendar, data: ['mode' => 'delete', 'id' => $this->eventId]);
+        $this->dispatch(self::SAVED, calendar: $this->calendar, data: $this->deletePayload());
         $this->closeAll();
+    }
+
+    /** @return array{mode: string, id: string|int|null, instanceId?: string} */
+    private function deletePayload(): array
+    {
+        return ['mode' => 'delete', 'id' => $this->eventId] + ($this->instanceId === null ? [] : ['instanceId' => $this->instanceId]);
     }
 
     // ── Validación ──────────────────────────────────────────────────────
@@ -273,7 +312,9 @@ class EventForm extends OverlayComponent
     // ── Salida ──────────────────────────────────────────────────────────
 
     /**
-     * @return array{mode: string, id: string|int|null, title: string, allDay: bool, start: string, end: ?string, resourceId: ?string, color: ?string}
+     * `instanceId` solo viaja si es una ocurrencia.
+     *
+     * @return array{mode: string, id: string|int|null, title: string, allDay: bool, start: string, end: ?string, resourceId: ?string, color: ?string, instanceId?: string}
      */
     private function payload(): array
     {
@@ -297,7 +338,7 @@ class EventForm extends OverlayComponent
             'end' => $end,
             'resourceId' => self::filled($this->resourceId) ? (string) $this->resourceId : null,
             'color' => self::filled($this->color) ? $this->color : null,
-        ];
+        ] + ($this->instanceId === null ? [] : ['instanceId' => $this->instanceId]);
     }
 
     /**
