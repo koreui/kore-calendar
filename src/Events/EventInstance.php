@@ -4,6 +4,7 @@ namespace KoreUi\Calendar\Events;
 
 use Carbon\CarbonImmutable;
 use KoreUi\Calendar\Time\DateRange;
+use KoreUi\Calendar\Time\Marker;
 
 /**
  * Un evento ya colocado en la rejilla: lo que el layout recibe.
@@ -39,7 +40,19 @@ final readonly class EventInstance
         public ?CarbonImmutable $exactStart = null,
         public ?CarbonImmutable $exactEnd = null,
         ?string $instanceId = null,
+        /** La serie de la que sale (su id), si es una ocurrencia generada o una modificada. */
+        public string|int|null $seriesId = null,
+        /** El inicio ORIGINAL de la ocurrencia, en hora de pared de la vista: qué ocurrencia es, aunque se haya movido. */
+        public ?Marker $recurrenceId = null,
+        /** Ese mismo inicio original como instante, para que el consumidor la identifique al persistir. */
+        public ?CarbonImmutable $occurrenceStart = null,
     ) {
         $this->instanceId = $instanceId ?? $event->id.':'.$range->start->ts;
+    }
+
+    /** Pertenece a una serie: hay que preguntar el alcance antes de cambiarla. */
+    public function isOccurrence(): bool
+    {
+        return $this->seriesId !== null;
     }
 }

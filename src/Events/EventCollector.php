@@ -2,6 +2,8 @@
 
 namespace KoreUi\Calendar\Events;
 
+use KoreUi\Calendar\Recurrence\RecurrenceExpander;
+
 use InvalidArgumentException;
 use KoreUi\Calendar\Time\DateRange;
 use KoreUi\Calendar\Time\WallClock;
@@ -17,10 +19,19 @@ use UnexpectedValueException;
  */
 final class EventCollector
 {
+    private readonly RecurrenceExpander $expander;
+
     public function __construct(
         private readonly WallClock $clock,
         private readonly EventNormalizer $normalizer,
-    ) {}
+        ?int $maxOccurrences = null,
+    ) {
+        $this->expander = new RecurrenceExpander(
+            $clock,
+            $normalizer,
+            $maxOccurrences ?? (function_exists('config') ? (int) config('kore-calendar.recurrence.max_occurrences', 1000) : 1000),
+        );
+    }
 
     /**
      * Sin ordenar: el orden (`eventOrder`) es del layout, que lo aplica sobre
@@ -35,7 +46,12 @@ final class EventCollector
         $from = $this->clock->toInstant($range->start);
         $to = $this->clock->toInstant($range->end);
 
-        $instances = [];
+        // Dos pasadas: primero se recoge todo, porque una ocurrencia modificada
+        // puede llegar antes que su serie (o de otra fuente), y la serie tiene que
+        // saber qué ocurrencias NO generar.
+        $series = [];
+        $overrides = [];
+        $plain = [];
 
         foreach ($sources as $source) {
             if (! $source instanceof EventSource) {
@@ -47,16 +63,56 @@ final class EventCollector
             }
 
             foreach ($source->events($from, $to) as $item) {
-                $instance = $this->normalizer->normalize($this->toEvent($source, $item));
+                $event = $this->toEvent($source, $item);
 
-                // Semiabierto: el evento que acaba justo cuando empieza el rango no entra.
-                if ($instance->range->intersects($range)) {
-                    $instances[] = $instance;
-                }
+                match (true) {
+                    $event->isRecurring() => $series[(string) $event->id] = $event,
+                    $event->isOverride() => $overrides[] = $event,
+                    default => $plain[] = $event,
+                };
             }
         }
 
-        return $instances;
+        $instances = [];
+
+        foreach ($plain as $event) {
+            $instances[] = $this->normalizer->normalize($event);
+        }
+
+        // La modificada SUSTITUYE a la generada, no se suma (FullCalendar #6451:
+        // RECURRENCE-ID duplicado). Se identifica en la representación de su serie.
+        $skip = [];
+        foreach ($overrides as $override) {
+            $parent = $series[(string) $override->recurrenceOf] ?? null;
+            $key = $parent ? RecurrenceExpander::key($parent, $override->recurrenceId, $this->clock) : null;
+
+            if ($key !== null) {
+                $skip[(string) $override->recurrenceOf][$key] = true;
+            }
+
+            $normalized = $this->normalizer->normalize($override);
+            $original = $this->clock->toMarker($override->recurrenceId);
+
+            $instances[] = new EventInstance(
+                event: $normalized->event,
+                range: $normalized->range,
+                allDay: $normalized->allDay,
+                hasEnd: $normalized->hasEnd,
+                exactStart: $normalized->exactStart,
+                exactEnd: $normalized->exactEnd,
+                instanceId: $override->recurrenceOf.':'.$original->ts,
+                seriesId: $override->recurrenceOf,
+                recurrenceId: $original,
+                occurrenceStart: $this->clock->toInstant($original),
+            );
+        }
+
+        foreach ($series as $id => $event) {
+            array_push($instances, ...$this->expander->expand($event, $range, $skip[$id] ?? []));
+        }
+
+        // Semiabierto: el evento que acaba justo cuando empieza el rango no entra.
+        return array_values(array_filter($instances, fn (EventInstance $i) => $i->range->intersects($range)));
     }
 
     private function toEvent(EventSource $source, mixed $item): CalendarEvent

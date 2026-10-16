@@ -155,7 +155,7 @@ it('fromArray rechaza una clave desconocida y lista las permitidas', function ()
     } catch (InvalidArgumentException $e) {
         expect($e->getMessage())
             ->toContain('clave desconocida «colour»')
-            ->toContain('Permitidas: id, title, start, end, allDay, resourceIds, groupId, color, url, display, editable, startEditable, durationEditable, overlap, meta, resourceId')
+            ->toContain('Permitidas: id, title, start, end, allDay, resourceIds, groupId, color, url, display, editable, startEditable, durationEditable, overlap, meta, rrule, exdates, recurrenceOf, recurrenceId, resourceId')
             ->toContain('`meta`');
     }
 });

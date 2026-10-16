@@ -28,6 +28,7 @@ final readonly class CalendarEvent
     public const KEYS = [
         'id', 'title', 'start', 'end', 'allDay', 'resourceIds', 'groupId', 'color', 'url',
         'display', 'editable', 'startEditable', 'durationEditable', 'overlap', 'meta',
+        'rrule', 'exdates', 'recurrenceOf', 'recurrenceId',
     ];
 
     /** Lo mínimo para que el evento exista; el resto tiene un valor por defecto. */
@@ -60,6 +61,10 @@ final readonly class CalendarEvent
         public ?bool $durationEditable = null,
         public ?bool $overlap = null,
         public array $meta = [],
+        public ?string $rrule = null,
+        public array $exdates = [],
+        public string|int|null $recurrenceOf = null,
+        public DateTimeInterface|string|null $recurrenceId = null,
     ) {
         if (self::isBlank($id)) {
             throw new InvalidArgumentException('CalendarEvent: el id no puede estar vacío.');
@@ -87,6 +92,63 @@ final readonly class CalendarEvent
         }
 
         $this->resourceIds = self::cleanResourceIds($id, $resourceIds);
+
+        self::checkRecurrence($id, $rrule, $exdates, $recurrenceOf, $recurrenceId);
+    }
+
+    /**
+     * Una ocurrencia de esta serie: el mismo evento con otras fechas y sin regla.
+     * La genera RecurrenceExpander; conserva id, título, recursos, color…
+     */
+    public function occurrence(DateTimeInterface|string $start, DateTimeInterface|string|null $end): self
+    {
+        return new self(
+            id: $this->id, title: $this->title, start: $start, end: $end, allDay: $this->allDay,
+            resourceIds: $this->resourceIds, groupId: $this->groupId, color: $this->color, url: $this->url,
+            display: $this->display, editable: $this->editable, startEditable: $this->startEditable,
+            durationEditable: $this->durationEditable, overlap: $this->overlap, meta: $this->meta,
+        );
+    }
+
+    /** Una serie (tiene `rrule`) o una ocurrencia modificada (tiene `recurrenceOf`). */
+    public function isRecurring(): bool
+    {
+        return $this->rrule !== null;
+    }
+
+    public function isOverride(): bool
+    {
+        return $this->recurrenceOf !== null;
+    }
+
+    /**
+     * La regla es RFC 5545 sin DTSTART (el inicio es `start`: tener los dos
+     * permitiría que no coincidieran). Una ocurrencia modificada necesita las dos
+     * claves que la identifican, y no puede ser a su vez una serie.
+     */
+    private static function checkRecurrence(string|int $id, ?string $rrule, array $exdates, string|int|null $of, mixed $recurrenceId): void
+    {
+        if ($rrule !== null) {
+            if (trim($rrule) === '') {
+                throw new InvalidArgumentException("Evento «{$id}»: `rrule` está vacío. Usa null si el evento no se repite.");
+            }
+
+            if (preg_match('/(^|[\s;])(DTSTART|RRULE:)/i', $rrule)) {
+                throw new InvalidArgumentException("Evento «{$id}»: `rrule` lleva solo la regla (FREQ=…;BYDAY=…), sin DTSTART ni el prefijo RRULE:. El inicio de la serie es `start`.");
+            }
+        }
+
+        if ($exdates !== [] && $rrule === null) {
+            throw new InvalidArgumentException("Evento «{$id}»: `exdates` solo tiene sentido con `rrule`.");
+        }
+
+        if (($of === null) !== ($recurrenceId === null)) {
+            throw new InvalidArgumentException("Evento «{$id}»: una ocurrencia modificada necesita `recurrenceOf` (la serie) y `recurrenceId` (qué ocurrencia sustituye), las dos.");
+        }
+
+        if ($of !== null && $rrule !== null) {
+            throw new InvalidArgumentException("Evento «{$id}»: una ocurrencia modificada no puede ser a su vez una serie (`rrule`).");
+        }
     }
 
     /**
@@ -112,11 +174,16 @@ final readonly class CalendarEvent
         ?bool $durationEditable = null,
         ?bool $overlap = null,
         array $meta = [],
+        ?string $rrule = null,
+        array $exdates = [],
+        string|int|null $recurrenceOf = null,
+        DateTimeInterface|string|null $recurrenceId = null,
     ): self {
         return new self(
             id: $id, title: $title, start: $start, end: $end, allDay: $allDay, resourceIds: $resourceIds,
             groupId: $groupId, color: $color, url: $url, display: $display, editable: $editable,
             startEditable: $startEditable, durationEditable: $durationEditable, overlap: $overlap, meta: $meta,
+            rrule: $rrule, exdates: $exdates, recurrenceOf: $recurrenceOf, recurrenceId: $recurrenceId,
         );
     }
 
