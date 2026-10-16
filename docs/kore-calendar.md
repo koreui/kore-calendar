@@ -2,6 +2,8 @@
 
 Componente Livewire base para un calendario con estado. Se extiende como `KoreDataTable`: implementas `events()` y, si quieres, `resources()` y `configure()`. La navegación (vista y fecha) vive en la URL.
 
+Documentación: [Calendar](getting-started.md) · **KoreCalendar** · [Configuración](configuration.md) · [Theming](theming.md) · [Accesibilidad](accessibility.md) · [iCalendar](ical.md)
+
 ## Uso
 
 ```php
@@ -74,7 +76,7 @@ Con ella, una fila con regla entra si `start < $to` **aunque su fin sea anterior
 | Método | Equivale a |
 |--------|-----------|
 | `views(array)` | Vistas del selector |
-| `defaultView(string)` | Vista inicial |
+| `defaultView(string)` | Vista inicial cuando la URL no trae `?view=`. Si no está en `views`, la primera de `views` |
 | `timezone(string)`, `locale(string)`, `firstDay(int)`, `hiddenDays(array)` | |
 | `weekNumbers('iso'\|'locale'\|false)` | |
 | `slotDuration('15m')`, `slotMinTime('08:00')`, `slotMaxTime('20:00')` | Rejilla horaria |
@@ -86,7 +88,9 @@ Con ella, una fila con regla entra si `start < $to` **aunque su fin sea anterior
 | `eventOrder(string, bool $strict)` | Orden de prioridad (`'start,-duration,allDay,title'`) |
 | `set(string $key, mixed $value)` | Cualquier clave del config, con puntos |
 
-`configure()` corre en cada petición (en `booted()`), así que sus valores sobreviven a las acciones sin viajar al navegador.
+`configure()` corre en cada petición (en `booted()`), así que sus valores sobreviven a las acciones sin viajar al navegador. Un `null` (`maxEvents(null)`) deja el valor del config. Las claves del config a las que corresponde cada método, y las que solo se cambian con `set()`: [Configuración](configuration.md#métodos-de-configure).
+
+`$view` y `$date` son propiedades públicas ligadas a `?view=` y `?date=`. Dos calendarios en la misma página comparten esos parámetros.
 
 ## Acciones
 
@@ -97,7 +101,9 @@ Con ella, una fila con regla entra si `start < $to` **aunque su fin sea anterior
 | `changeView(string)` | Cambia de vista; solo a las que ofrece el calendario |
 | `goToDate('YYYY-MM-DD')` | Va a una fecha; solo fechas reales |
 | `clickEvent($id)` | Pulsar un evento: lo busca entre los de la vista y llama a `onEventClick()`. `$id` es el `instanceId` (`data-kore-instance`); el id del evento también vale, salvo en una serie |
-| `moveEvent($id, …)`, `resizeEvent($id, …)` | Lo que llama el arrastre. Con una ocurrencia no guardan: devuelven `needsScope` y abren el diálogo de alcance |
+| `moveEvent($id, $start, $allDay, $resourceId = null, $fromResourceId = null)`, `resizeEvent($id, $edge, $fromStart = false)` | Lo que llama el arrastre (los instantes son `Marker` en segundos). Devuelven `['ok' => bool, 'message' => string]`. Con una ocurrencia no guardan: devuelven `needsScope` y abren el diálogo de alcance |
+| `selectRange($start, $end, $allDay, $resourceId = null)` | Lo que llama la selección de un rango. Valida y llama a `onDateSelect()`; sin `selectable()` no hace nada |
+| `timelineScroll($row)` | El timeline virtualizado (más de `timeline.virtualize_after` filas) pide otra ventana de filas |
 | `applyRecurrenceScope('this'\|'following'\|'all')` | La respuesta del diálogo: repite la acción pendiente con ese alcance |
 | `cancelRecurrenceScope()` | Descarta la acción pendiente |
 | `undoLastChange()` | Deshace el último movimiento o cambio de duración (con `undoable()`) |
@@ -142,7 +148,7 @@ protected function onDateSelect(Selection $selection): void
 - **Día completo ↔ con hora:** arrastrar de una columna horaria al carril de todo el día (o al revés) cambia el tipo; sin `allDayMaintainDuration()` la duración pasa a la por defecto del nuevo tipo, como en FullCalendar.
 - **Por evento:** `editable`, `startEditable`, `durationEditable` y `overlap` en el `CalendarEvent` ganan a la configuración.
 
-**Teclado:** con un evento enfocado, Espacio lo agarra; ←/→ lo mueven un día, ↑/↓ un slot (una semana en el mes), Mayúsculas + flechas cambian la duración, Intro suelta y Escape cancela. Cada paso se anuncia. **Táctil:** pulsación larga para empezar a arrastrar; un deslizamiento normal sigue siendo scroll.
+**Teclado:** con un evento enfocado, Espacio lo agarra; ←/→ lo mueven un día, ↑/↓ un slot (un día si es de día completo, una semana en el mes), Mayúsculas + flechas cambian el fin, Intro suelta y Escape o Tab cancelan. ←/→ siguen el sentido visual (se invierten en RTL). Cada paso se anuncia: el inicio al mover y el nuevo fin al redimensionar. **Táctil:** pulsación larga para empezar a arrastrar; un deslizamiento normal sigue siendo scroll. Todas las teclas, los anuncios y lo que no cubre: [Accesibilidad](accessibility.md).
 
 | Método de `configure()` | |
 |---|---|
@@ -185,7 +191,7 @@ public function configure(): void
 - **Semiabierto.** El rango tiene que caber entero: `[09:00, 17:00)` cabe, `[16:00, 17:30)` no, y acabar a las 17:00 en punto sí. Un hueco entre dos tramos que se tocan (09-13 y 13-17) no es un hueco.
 - **Sin horario definido, todo vale** (`businessHours` en `false` o vacío): una restricción sin horario no prohíbe nada. FullCalendar rechaza todo en ese caso, que es casi siempre un descuido.
 - **Mensajes** (`translations`): `outside_business_hours` («Fuera del horario laboral») y `outside_business_hours_resource` («Fuera del horario de :resource»), que sale cuando el recurso tiene su propio horario o es el que falla. Salen en el toast de siempre y como anuncio.
-- **Orden de las comprobaciones:** editable → recurso → rango válido → horario laboral → solapes.
+- **Orden de las comprobaciones:** editable → cambio de recurso permitido → rango válido → horario laboral → solapes. Antes de todas, el recurso destino tiene que existir en `resources()`.
 - **El formulario de evento no aplica estas restricciones** (crear y editar con `eventForm()` solo comprueba el rango válido, como siempre): valida `createEvent()` / `updateEvent()` con `BusinessHours` si las necesitas. Y **deshacer** no las aplica: devuelve el evento a donde estaba, aunque ya estuviera fuera de horario.
 - **Solo `'businessHours'`.** FullCalendar admite también un `groupId` o un rango como restricción; aquí una restricción desconocida lanza una excepción y la regla de negocio que no sea el horario va en `persistMove()` / `persistResize()`.
 
@@ -290,7 +296,7 @@ protected function deleteEvent(CalendarEvent $event)
 El layout necesita `<livewire:kore-overlay-manager />` (el formulario es un overlay) y `<livewire:kore-feedback-manager />` (los toasts).
 
 - **Seleccionar un rango** (hace falta `selectable()`) abre el formulario de un evento nuevo con ese rango y el recurso donde se soltó. **Pulsar un evento** (clic, o Intro con el teclado) abre el de edición. Los eventos con `url` siguen siendo enlaces, y uno con `editable: false` no abre el formulario.
-- **El formulario no guarda nada.** Valida lo que se escribe (título obligatorio, fechas reales, fin no anterior al inicio) y devuelve los datos al calendario que lo abrió; el calendario los vuelve a comprobar y llama al hook. Eliminar pide antes confirmación con el diálogo de kore-ui.
+- **El formulario no guarda nada.** Valida lo que se escribe (título obligatorio y de 255 caracteres como máximo, fechas reales, fin no anterior al inicio) y devuelve los datos al calendario que lo abrió; el calendario los vuelve a comprobar y llama al hook. Eliminar pide antes confirmación con el diálogo de kore-ui.
 - **Los hooks** tienen el contrato de `persistMove`: `null` o `true` aceptan, `false` o un texto rechazan con ese motivo, corren dentro de una transacción si hay base de datos y una excepción se reporta. Por defecto rechazan con un mensaje que dice qué método falta. Éxito: toast de éxito. Rechazo: toast de error con el motivo.
 - **`$data`** (ya limpio):
 

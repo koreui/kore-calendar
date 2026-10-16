@@ -29,7 +29,7 @@ class TeamCalendarExportController
 }
 ```
 
-`download()` devuelve una `Response` con `Content-Type: text/calendar; charset=utf-8` y `Content-Disposition: attachment`. El nombre se limpia (sin rutas ni saltos de línea, siempre `.ics`, y con una versión ASCII para los navegadores antiguos si lleva tildes), así que puede venir de la petición.
+`download()` devuelve una `Response` con `Content-Type: text/calendar; charset=utf-8`, `X-Content-Type-Options: nosniff` y `Content-Disposition: attachment`. El nombre se limpia (sin rutas ni saltos de línea, siempre `.ics`, y con una versión ASCII para los navegadores antiguos si lleva tildes), así que puede venir de la petición.
 
 Para obtener el texto sin respuesta HTTP (guardarlo, adjuntarlo a un correo):
 
@@ -113,7 +113,7 @@ Lo demás (`CLASS`, `PRIORITY`, `GEO`, `ATTACH`…) no se guarda.
 
 Dos constructores, a propósito: `ICalSource::fromString($ics)` para un contenido (un archivo subido, una respuesta HTTP) y `ICalSource::fromFile($ruta)` para un archivo en disco. `fromString` nunca interpreta el texto como ruta: un constructor que lo adivinara convertiría un dato del usuario en un lector de archivos del servidor.
 
-Un `.ics` (su contenido o la ruta) como fuente del calendario, junto a `EloquentSource` y compañía:
+Un `.ics` (su contenido o la ruta) como fuente del calendario, junto a `EloquentSource` y compañía. Los dos constructores aceptan como segundo argumento las opciones de `ICalReader` (`strict`, `uidDomain`, `untitled`):
 
 ```php
 use KoreUi\Calendar\ICal\ICalSource;
@@ -197,3 +197,9 @@ Un TZID desconocido y sin VTIMEZONE en el archivo no se puede resolver: es un er
 - **Una `RRULE` que php-rrule no entiende** hace fallar ese VEVENT al leerlo, en vez de lanzar más tarde al dibujar el calendario.
 - **El tamaño del archivo es cosa tuya.** El análisis es lineal (3 000 eventos en unas decenas de milisegundos) pero un archivo subido por un usuario debe tener un tope.
 - **iCalendar 1.0 (vCalendar, `.vcs`)** no se soporta: se lee como 2.0 con un aviso.
+
+## Ver también
+
+- [Calendar](getting-started.md): eventos, series recurrentes y fuentes de eventos.
+- [KoreCalendar](kore-calendar.md): `RecurrenceEditor` y los hooks que reciben las series.
+- [Configuración](configuration.md): `recurrence.max_occurrences` y el resto de claves.

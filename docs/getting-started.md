@@ -1,6 +1,8 @@
 # Calendar
 
-Calendario de eventos y recursos: vistas mes, semana, día, agenda, columnas por recurso y timeline. El layout se calcula en PHP (con el algoritmo de colocación de FullCalendar portado) y se pinta en Blade con los tokens de kore-ui, así que el tema y el dark mode se aplican solos. **Sin dependencias JavaScript**: el bundle del calendario pesa 1,5 kB gzip y solo gestiona el teclado.
+Calendario de eventos y recursos: vistas mes, semana, día, agenda, columnas por recurso y timeline. El layout se calcula en PHP (con el algoritmo de colocación de FullCalendar portado) y se pinta en Blade con los tokens de kore-ui, así que el tema y el dark mode se aplican solos. **Sin dependencias JavaScript**: el bundle propio pesa menos de 5 kB gzip y gestiona el teclado, el arrastre y la selección.
+
+Documentación: **Calendar** · [KoreCalendar](kore-calendar.md) · [Configuración](configuration.md) · [Theming](theming.md) · [Accesibilidad](accessibility.md) · [iCalendar](ical.md)
 
 Hay dos formas de usarlo, igual que el DataTable y el Kanban:
 
@@ -21,7 +23,7 @@ En `resources/css/app.css`, junto a lo de kore-ui:
 @source '../../vendor/kore-ui/calendar/src/**/*.php';
 ```
 
-El JavaScript lo carga el propio componente cuando aparece (con `@assets`). No hay directiva que añadir al layout.
+El `@import` va después del tema de kore-ui. El JavaScript lo carga el propio componente cuando aparece (con `@assets`): no hay directiva que añadir al layout. El formulario de evento, el diálogo de series y los avisos necesitan además `<livewire:kore-overlay-manager />` y `<livewire:kore-feedback-manager />` en el layout, como cualquier overlay de kore-ui.
 
 ## Componente
 
@@ -36,12 +38,16 @@ El JavaScript lo carga el propio componente cuando aparece (con `@assets`). No h
 />
 ```
 
+Los eventos pueden ser arrays, `CalendarEvent` o fuentes (`EventSource`: `EloquentSource`, `ArraySource`, `CallbackSource`, `ICalSource`, o `Meeting::calendarSource()` si el modelo usa `HasCalendarEvents`), y se pueden mezclar en la misma lista.
+
+## Props del componente
+
 | Prop | Tipo | Default | Descripción |
 |------|------|---------|-------------|
 | `events` | `iterable` | `[]` | Eventos (arrays, `CalendarEvent`) o fuentes (`EventSource`) |
 | `resources` | `iterable\|null` | `null` | Recursos. Sin ellos no se ofrecen las vistas por recurso |
-| `view` | `string` | `config(default_view)` | `month`, `week`, `day`, `list`, `resource-week`, `resource-day`, `timeline-day`, `timeline-week`, `timeline-month` |
-| `date` | `string\|DateTime` | hoy | Fecha que se muestra |
+| `view` | `string` | config `default_view`, o la primera de `views` | `month`, `week`, `day`, `list`, `resource-week`, `resource-day`, `timeline-day`, `timeline-week`, `timeline-month`. `?view=` la sustituye. Sin ninguna de las dos, `default_view` del config y, si no está entre las vistas del selector, la primera de `views` |
+| `date` | `string\|DateTime` | hoy | Fecha que se muestra. `?date=YYYY-MM-DD` la sustituye |
 | `views` | `array` | `config(views)` | Vistas del selector |
 | `timezone` | `string` | `app.timezone` | Zona de la vista |
 | `locale` | `string` | `app()->getLocale()` | Idioma de fechas |
@@ -57,6 +63,8 @@ El JavaScript lo carga el propio componente cuando aparece (con `@assets`). No h
 | `toolbar` | `bool` | `true` | Barra con navegación y selector de vista |
 | `date-param` / `view-param` | `string` | `date` / `view` | Nombres de los parámetros de la URL |
 
+Cada prop gana a la clave del config del mismo nombre. Las demás claves, y la lista completa con tipos y defaults, están en [Configuración](configuration.md#props-de-x-korecalendar). Los atributos que no son props (`class`, `id`, `data-*`) van al `div` que envuelve el calendario.
+
 ## Eventos
 
 | Campo | Tipo | Descripción |
@@ -66,10 +74,10 @@ El JavaScript lo carga el propio componente cuando aparece (con `@assets`). No h
 | `start`, `end` | `string\|DateTime` | `end` es **exclusivo** y opcional. `'2026-10-14'` → `'2026-10-17'` cubre del 14 al 16 |
 | `allDay` | `bool\|null` | Sin indicar: día completo si `start` (y `end`) son fechas sin hora |
 | `resourceIds` / `resourceId` | `array` / `string` | Recursos del evento |
-| `color` | `string` | Token (`primary`, `success`, `chart-1`…`chart-8`) o color CSS |
+| `color` | `string` | Token de kore-ui (`primary`, `secondary`, `accent`, `success`, `warning`, `destructive`, `info`, `muted`, `chart-1`…`chart-8`) o color CSS. Ver [Theming](theming.md#color-de-los-eventos) |
 | `url` | `string` | El evento es un enlace |
 | `display` | `string` | `auto`, `block`, `list-item`, `background`, `none` |
-| `groupId`, `editable`, `startEditable`, `durationEditable`, `overlap` | | Para la interacción (fases siguientes) |
+| `groupId`, `editable`, `startEditable`, `durationEditable`, `overlap` | | Para la interacción en `KoreCalendar`: ganan a la configuración del calendario ([Edición](kore-calendar.md#edición-mover-redimensionar-y-seleccionar)) |
 | `rrule`, `exdates`, `recurrenceOf`, `recurrenceId` | | Eventos que se repiten: ver [Eventos recurrentes](#eventos-recurrentes) |
 | `meta` | `array` | Datos libres. **Cualquier otra clave lanza una excepción**: una errata como `colour` no se pierde en silencio |
 
@@ -119,7 +127,7 @@ Editar una ocurrencia pregunta a qué alcanza el cambio: [Series recurrentes](ko
 />
 ```
 
-Con recursos también hay **timeline**: el tiempo en horizontal y una fila por recurso, agrupadas por `group` (plegables) y en árbol por `parentId`. Las ranuras se configuran por vista en `timeline.slots`. Con más de `timeline.virtualize_after` filas, dentro de `KoreCalendar` solo se monta una ventana y el resto se pide al hacer scroll.
+Con recursos también hay **timeline**: el tiempo en horizontal y una fila por recurso, agrupadas por `group` (plegables) y en árbol por `parentId`. Las ranuras se configuran por vista en `timeline.slots`. Con más de `timeline.virtualize_after` filas, `KoreCalendar` solo monta una ventana y pide el resto al hacer scroll. `<x-kore::calendar>` no virtualiza: sin Livewire no hay servidor que dé más filas, así que pinta todas (con cientos de recursos y eventos conviene la clase base).
 
 Cada recurso tiene `id`, `title` y, opcionales, `parentId` (árbol), `group`, `color` (por defecto para sus eventos), `order`, `businessHours` ([su horario laboral](#horario-laboral-y-disponibilidad)) y `meta`. Un evento sin recurso no aparece en las vistas por recurso. Los ids duplicados, los padres que no existen y los ciclos lanzan una excepción.
 
@@ -176,16 +184,20 @@ Las restricciones (que un evento movido o una selección deban quedar en horario
 
 ## Configuración
 
-`php artisan vendor:publish --tag=kore-calendar-config` publica `config/kore-calendar.php`: vista por defecto, zona, primer día, rejilla horaria, límites del mes, orden de eventos (`event_order`, el mismo formato que FullCalendar), formatos de fecha (`isoFormat` de Carbon) y textos de interfaz (`translations`).
+`php artisan vendor:publish --tag=kore-calendar-config` publica `config/kore-calendar.php`: vista por defecto, zona, primer día, rejilla horaria, límites del mes, orden de eventos (`event_order`, el mismo formato que FullCalendar), formatos de fecha (`isoFormat` de Carbon) y textos de interfaz (`translations`). Todas las claves, los métodos de `configure()` y las props equivalentes: [Configuración](configuration.md). Los colores y tamaños: [Theming](theming.md).
+
+Al publicar el config puedes dejar solo lo que cambias: los bloques se funden con los del paquete a cualquier profundidad (una traducción suelta conserva las demás) y las listas (`views`, `hidden_days`, los tramos de `business_hours`) se sustituyen enteras. `php artisan vendor:publish --tag=kore-calendar-views` copia las vistas a `resources/views/vendor/kore-calendar`, y las copias ganan a las del paquete (ver [Configuración](configuration.md#cómo-se-resuelve-un-valor)).
 
 ## Accesibilidad
 
 - La rejilla es un `role=table` (no `grid`, para que los lectores de pantalla sigan en modo lectura), con cada evento en la lista de la celda donde empieza.
-- La rejilla es **una sola parada de tabulación**. Dentro, las flechas mueven por días (←/→) y semanas (↑/↓), e Inicio/Fin van a los extremos de la semana. En RTL se invierten.
+- La rejilla es **una sola parada de tabulación**. En el mes, las flechas mueven por días (←/→) y semanas (↑/↓), e Inicio/Fin van a los extremos de la semana; en semana, día y recursos se enfocan las cabeceras de columna (←/→, Inicio/Fin). En RTL se invierten.
 - Hoy lleva `aria-current="date"`. Las cabeceras dicen la fecha completa al lector de pantalla.
 - El título se anuncia al navegar (`aria-live="polite"`).
 - El "+N más" abre un `role=dialog` con el foco atrapado; Escape lo cierra y devuelve el foco al botón.
 - Lo no laborable es decoración (`aria-hidden`). Un evento en conflicto lleva un texto para lectores de pantalla además del icono, y un movimiento fuera de horario se rechaza con un toast que dice el motivo.
+
+Mover y redimensionar con el teclado, los anuncios, el comportamiento táctil y lo que todavía no está cubierto: [Accesibilidad](accessibility.md).
 
 ## Notas de implementación
 
