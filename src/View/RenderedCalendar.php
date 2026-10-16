@@ -5,6 +5,7 @@ namespace KoreUi\Calendar\View;
 use KoreUi\Calendar\Layout\ListLayout;
 use KoreUi\Calendar\Layout\MonthLayout;
 use KoreUi\Calendar\Layout\TimeGridLayout;
+use KoreUi\Calendar\Layout\TimelineLayout;
 use KoreUi\Calendar\Resources\ResourceSet;
 use KoreUi\Calendar\Time\Marker;
 use KoreUi\Calendar\Time\ViewRange;
@@ -18,7 +19,7 @@ final class RenderedCalendar
     public function __construct(
         public readonly CalendarSettings $settings,
         public readonly ViewRange $range,
-        public readonly MonthLayout|TimeGridLayout|ListLayout $layout,
+        public readonly MonthLayout|TimeGridLayout|ListLayout|TimelineLayout $layout,
         public readonly Marker $now,
         public readonly ?ResourceSet $resources,
     ) {}

@@ -8,11 +8,11 @@ use KoreUi\Calendar\Time\ViewRange;
 /** Qué vistas puede ofrecer un calendario y con qué componente se pinta cada una. */
 final class CalendarViews
 {
-    private const RESOURCE_VIEWS = ['resource-week', 'resource-day'];
+    private const RESOURCE_VIEWS = ['resource-week', 'resource-day', 'timeline-day', 'timeline-week', 'timeline-month'];
 
     /**
-     * Las vistas pedidas que existen, sin las de recursos si no hay recursos: una
-     * vista "Salas" vacía no le sirve a nadie.
+     * Las vistas pedidas que existen, sin las de recursos (columnas y timeline) si
+     * no hay recursos: una vista "Salas" vacía no le sirve a nadie.
      *
      * @param  iterable<string>  $wanted
      * @return list<string>
@@ -24,7 +24,6 @@ final class CalendarViews
         return array_values(array_filter(
             array_unique([...$wanted]),
             fn ($v) => in_array($v, ViewRange::views(), true)
-                && ! str_starts_with($v, 'timeline')
                 && ($hasResources || ! in_array($v, self::RESOURCE_VIEWS, true)),
         ));
     }
@@ -35,6 +34,7 @@ final class CalendarViews
         return match ($view) {
             'month' => 'month',
             'list' => 'list',
+            'timeline-day', 'timeline-week', 'timeline-month' => 'timeline',
             default => 'time-grid',
         };
     }

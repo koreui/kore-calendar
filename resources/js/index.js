@@ -16,10 +16,12 @@
  */
 import KoreCalendarDrag from './interaction/drag.js';
 import KoreCalendarGrid from './grid.js';
+import KoreCalendarTimeline from './timeline.js';
 
 const COMPONENTES = {
     KoreCalendarDrag,
     KoreCalendarGrid,
+    KoreCalendarTimeline,
 };
 
 const registrar = () => {

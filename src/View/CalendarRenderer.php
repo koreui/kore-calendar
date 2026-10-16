@@ -9,6 +9,7 @@ use KoreUi\Calendar\Events\Sources\ArraySource;
 use KoreUi\Calendar\Layout\ListLayout;
 use KoreUi\Calendar\Layout\MonthLayout;
 use KoreUi\Calendar\Layout\TimeGridLayout;
+use KoreUi\Calendar\Layout\TimelineLayout;
 use KoreUi\Calendar\Resources\ResourceSet;
 use KoreUi\Calendar\Time\ViewRange;
 
@@ -40,11 +41,24 @@ final class CalendarRenderer
         $layout = match ($settings->view) {
             'month' => MonthLayout::build($range, $instances, $now, $options, $settings->weekNumbers),
             'list' => ListLayout::build($range, $instances, $now, $options),
+            'timeline-day', 'timeline-week', 'timeline-month' => self::timeline($settings, $range, $instances, $now, $resources),
             'resource-week', 'resource-day' => TimeGridLayout::build($range, $instances, $now, $options, $resources ?? new ResourceSet([]), $settings->datesAboveResources, $settings->slotDuration),
             default => TimeGridLayout::build($range, $instances, $now, $options, null, false, $settings->slotDuration),
         };
 
         return new RenderedCalendar($settings, $range, $layout, $now, $resources);
+    }
+
+    private static function timeline(CalendarSettings $settings, ViewRange $range, array $instances, $now, ?ResourceSet $resources): TimelineLayout
+    {
+        // Solo con muchas filas se monta una ventana: por debajo, todo de una vez.
+        $virtual = count(TimelineLayout::rowSkeleton($resources)) > CalendarSettings::virtualizeAfter();
+
+        return TimelineLayout::build(
+            $range, $instances, $now, $settings->layoutOptions, $resources, $settings->timelineSlot,
+            $virtual ? ($settings->timelineRowStart ?? 0) : null,
+            $virtual ? $settings->timelineRowLimit : null,
+        );
     }
 
     /** @return list<EventSource> */

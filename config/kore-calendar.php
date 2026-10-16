@@ -12,11 +12,11 @@
 
 return [
 
-    /* Vista inicial: month | week | day | list | resource-week | resource-day */
+    /* Vista inicial: month | week | day | list | resource-week | resource-day | timeline-day | timeline-week | timeline-month */
     'default_view' => 'month',
 
     /* Vistas del selector. Las de recursos solo se ofrecen si el calendario tiene recursos. */
-    'views' => ['month', 'week', 'day', 'list', 'resource-week', 'resource-day'],
+    'views' => ['month', 'week', 'day', 'list', 'resource-week', 'resource-day', 'timeline-day', 'timeline-week', 'timeline-month'],
 
     /* Zona horaria de la vista. null = config('app.timezone'). */
     'timezone' => null,
@@ -56,6 +56,17 @@ return [
         'slot_event_overlap' => true,     // los solapados se pisan un poco, como en FullCalendar
         'max_stack' => null,              // máximo de eventos lado a lado
         'dates_above_resources' => false, // cabecera: fecha → recursos (true) o recurso → fechas
+    ],
+
+    'timeline' => [
+        'slots' => [                      // duración de cada ranura por vista
+            'timeline-day' => '1h',
+            'timeline-week' => '1d',
+            'timeline-month' => '1d',
+        ],
+        'scroll_time' => '08:00',         // hora a la que se abre un timeline por horas (si no es hoy)
+        'virtualize_after' => 100,        // con más filas, solo se monta una ventana
+        'window' => 60,                   // filas por ventana
     ],
 
     'event_order' => 'start,-duration,allDay,title',
@@ -98,6 +109,11 @@ return [
         'view_list' => 'Agenda',
         'view_resource-week' => 'Recursos · semana',
         'view_resource-day' => 'Recursos · día',
+        'view_timeline-day' => 'Timeline · día',
+        'view_timeline-week' => 'Timeline · semana',
+        'view_timeline-month' => 'Timeline · mes',
+        'resources' => 'Recursos',
+        'toggle_group' => 'Mostrar u ocultar :group',
     ],
 
 ];

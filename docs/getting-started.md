@@ -1,6 +1,6 @@
 # Calendar
 
-Calendario de eventos y recursos: vistas mes, semana, día, agenda y columnas por recurso. El layout se calcula en PHP (con el algoritmo de colocación de FullCalendar portado) y se pinta en Blade con los tokens de kore-ui, así que el tema y el dark mode se aplican solos. **Sin dependencias JavaScript**: el bundle del calendario pesa 1,5 kB gzip y solo gestiona el teclado.
+Calendario de eventos y recursos: vistas mes, semana, día, agenda, columnas por recurso y timeline. El layout se calcula en PHP (con el algoritmo de colocación de FullCalendar portado) y se pinta en Blade con los tokens de kore-ui, así que el tema y el dark mode se aplican solos. **Sin dependencias JavaScript**: el bundle del calendario pesa 1,5 kB gzip y solo gestiona el teclado.
 
 Hay dos formas de usarlo, igual que el DataTable y el Kanban:
 
@@ -40,7 +40,7 @@ El JavaScript lo carga el propio componente cuando aparece (con `@assets`). No h
 |------|------|---------|-------------|
 | `events` | `iterable` | `[]` | Eventos (arrays, `CalendarEvent`) o fuentes (`EventSource`) |
 | `resources` | `iterable\|null` | `null` | Recursos. Sin ellos no se ofrecen las vistas por recurso |
-| `view` | `string` | `config(default_view)` | `month`, `week`, `day`, `list`, `resource-week`, `resource-day` |
+| `view` | `string` | `config(default_view)` | `month`, `week`, `day`, `list`, `resource-week`, `resource-day`, `timeline-day`, `timeline-week`, `timeline-month` |
 | `date` | `string\|DateTime` | hoy | Fecha que se muestra |
 | `views` | `array` | `config(views)` | Vistas del selector |
 | `timezone` | `string` | `app.timezone` | Zona de la vista |
@@ -84,6 +84,8 @@ Un string sin zona (`'2026-10-15 10:00'`) es hora de pared en la zona de la vist
     :events="$reservas"
 />
 ```
+
+Con recursos también hay **timeline**: el tiempo en horizontal y una fila por recurso, agrupadas por `group` (plegables) y en árbol por `parentId`. Las ranuras se configuran por vista en `timeline.slots`. Con más de `timeline.virtualize_after` filas, dentro de `KoreCalendar` solo se monta una ventana y el resto se pide al hacer scroll.
 
 Cada recurso tiene `id`, `title` y, opcionales, `parentId` (árbol), `group`, `color` (por defecto para sus eventos), `order`, `businessHours` y `meta`. Un evento sin recurso no aparece en las vistas por recurso. Los ids duplicados, los padres que no existen y los ciclos lanzan una excepción.
 

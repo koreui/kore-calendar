@@ -47,6 +47,9 @@ abstract class KoreCalendar extends Component
     #[Url(as: 'date', except: '')]
     public string $date = '';
 
+    /** Primera fila de la ventana del timeline virtualizado. No va a la URL. */
+    public int $timelineRow = 0;
+
     /** Ajustes de `configure()` con la forma del config ('time.slot_duration' => '15m'). */
     protected array $koreSettings = [];
 
@@ -100,6 +103,7 @@ abstract class KoreCalendar extends Component
         // Lo que llega del navegador no es fiable: solo vistas que este calendario ofrece.
         if (in_array($view, $this->koreAvailableViews(), true)) {
             $this->view = $view;
+            $this->timelineRow = 0;
         }
     }
 
@@ -108,6 +112,12 @@ abstract class KoreCalendar extends Component
         if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) && checkdate((int) substr($date, 5, 2), (int) substr($date, 8, 2), (int) substr($date, 0, 4))) {
             $this->date = $date;
         }
+    }
+
+    /** El timeline pide otra ventana de filas al hacer scroll. */
+    public function timelineScroll(int $row): void
+    {
+        $this->timelineRow = max(0, $row);
     }
 
     // ── Configuración fluida (para configure()) ─────────────────────────
@@ -226,6 +236,7 @@ abstract class KoreCalendar extends Component
             ...$this->koreSettings,
             'view' => $view,
             'date' => $this->date !== '' ? $this->date : null,
+            'timeline.row_start' => $this->timelineRow,
         ]);
     }
 

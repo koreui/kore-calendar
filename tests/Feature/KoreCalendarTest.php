@@ -3,6 +3,7 @@
 use Carbon\CarbonImmutable;
 use KoreUi\Calendar\Tests\Feature\Fixtures\PlainCalendar;
 use KoreUi\Calendar\Tests\Feature\Fixtures\TeamCalendar;
+use KoreUi\Calendar\Tests\Feature\Fixtures\TimelineCalendar;
 use Livewire\Livewire;
 
 beforeEach(function () {
@@ -95,4 +96,20 @@ it('la barra usa acciones de Livewire, no enlaces', function () {
         ->assertSeeHtml('wire:click="next"')
         ->assertSeeHtml('wire:click="changeView(\'week\')"')
         ->assertSeeHtml('aria-live="polite"');
+});
+
+it('el timeline pone cada evento en la fila de su recurso', function () {
+    Livewire::withQueryParams(['view' => 'timeline-day', 'date' => '2026-10-14'])
+        ->test(TimelineCalendar::class)
+        ->assertSee('Sala Ámbar')
+        ->assertSee('Revisión trimestral')
+        ->assertSeeHtml('kore-calendar-timeline-lane');
+});
+
+it('timelineScroll mueve la ventana y cambiar de vista la reinicia', function () {
+    Livewire::test(TimelineCalendar::class)
+        ->call('timelineScroll', 40)->assertSet('timelineRow', 40)
+        ->call('timelineScroll', -5)->assertSet('timelineRow', 0)
+        ->call('timelineScroll', 40)
+        ->call('changeView', 'month')->assertSet('timelineRow', 0);
 });

@@ -76,5 +76,10 @@
         <x-kore::calendar.toolbar :calendar="$calendar" :views="$available" :mode="$mode" :date-param="$dateParam" :view-param="$viewParam" />
     @endif
 
-    <x-dynamic-component :component="'kore::calendar.'.$vista" :calendar="$calendar" />
+    @if ($vista === 'timeline')
+        {{-- Solo el timeline necesita el modo: con Livewire pide ventanas de filas al hacer scroll. --}}
+        <x-kore::calendar.timeline :calendar="$calendar" :mode="$mode" />
+    @else
+        <x-dynamic-component :component="'kore::calendar.'.$vista" :calendar="$calendar" />
+    @endif
 </div>

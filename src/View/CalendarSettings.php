@@ -36,6 +36,10 @@ final class CalendarSettings
         public readonly int $defaultAllDayDays,
         /** @var array<string, string> */
         public readonly array $formats,
+        public readonly int $timelineSlot = 3600,
+        public readonly ?int $timelineRowStart = null,
+        public readonly ?int $timelineRowLimit = null,
+        public readonly int $timelineScrollTime = 8 * 3600,
     ) {}
 
     /**
@@ -87,6 +91,8 @@ final class CalendarSettings
             allDayMaxEventRows: self::intOrNull($get('time_grid.all_day_max_rows', 5)),
         );
 
+        $timeline = self::timeline($get, (string) $get('view', $get('default_view', 'month')));
+
         return new self(
             view: (string) $get('view', $get('default_view', 'month')),
             date: $date,
@@ -107,7 +113,30 @@ final class CalendarSettings
             defaultTimedSeconds: (int) Duration::seconds($get('time.default_timed_duration', '1h')),
             defaultAllDayDays: (int) $get('time.default_all_day_duration', 1),
             formats: array_merge((array) config('kore-calendar.formats', []), (array) ($overrides['formats'] ?? [])),
+            timelineSlot: $timeline['timelineSlot'],
+            timelineRowStart: $timeline['timelineRowStart'],
+            timelineRowLimit: $timeline['timelineRowLimit'],
+            timelineScrollTime: self::timeOfDay((string) $get('timeline.scroll_time', '08:00')),
         );
+    }
+
+    /** @return array{timelineSlot: int, timelineRowStart: ?int, timelineRowLimit: ?int} */
+    private static function timeline(\Closure $get, string $view): array
+    {
+        $slots = (array) $get('timeline.slots', []);
+        $window = (int) $get('timeline.window', 60);
+
+        return [
+            'timelineSlot' => (int) Duration::seconds($slots[$view] ?? '1h'),
+            'timelineRowStart' => self::intOrNull($get('timeline.row_start')),
+            'timelineRowLimit' => $window > 0 ? $window : null,
+        ];
+    }
+
+    /** Con más filas que esto el timeline se virtualiza. */
+    public static function virtualizeAfter(): int
+    {
+        return (int) config('kore-calendar.timeline.virtualize_after', 100);
     }
 
     /** Cambia la vista o la fecha sin recalcular el resto (navegación). */
@@ -117,7 +146,7 @@ final class CalendarSettings
             $view ?? $this->view, $date ?? $this->date, $this->clock, $this->locale, $this->weekRules,
             $this->weekNumbers, $this->viewOptions, $this->layoutOptions, $this->slotDuration,
             $this->nowIndicator, $this->datesAboveResources, $this->defaultTimedSeconds,
-            $this->defaultAllDayDays, $this->formats,
+            $this->defaultAllDayDays, $this->formats, $this->timelineSlot, $this->timelineRowStart, $this->timelineRowLimit, $this->timelineScrollTime,
         );
     }
 
