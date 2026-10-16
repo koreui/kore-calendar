@@ -378,3 +378,15 @@ it('mutar lo que devuelve un método no altera el conjunto', function () {
 it('ResourceSet es Countable', function () {
     expect(new ResourceSet([rsRecurso('a'), rsRecurso('b')]))->toBeInstanceOf(Countable::class)->toHaveCount(2);
 });
+
+it('ordena los títulos con las reglas del idioma: las tildes no van al final', function () {
+    $set = new KoreUi\Calendar\Resources\ResourceSet([
+        ['id' => 'z', 'title' => 'Sala Zeta'],
+        ['id' => 'a', 'title' => 'Sala Ámbar'],
+        ['id' => 'b', 'title' => 'Sala Bruma'],
+        ['id' => '10', 'title' => 'Sala 10'],
+        ['id' => '2', 'title' => 'Sala 2'],
+    ]);
+
+    expect(array_map(fn ($r) => $r->title, $set->all()))->toBe(['Sala 2', 'Sala 10', 'Sala Ámbar', 'Sala Bruma', 'Sala Zeta']);
+})->skip(! class_exists(Collator::class), 'requiere ext-intl');

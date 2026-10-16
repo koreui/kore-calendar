@@ -224,6 +224,29 @@ final class ResourceSet implements Countable
         }
     }
 
+    /**
+     * Títulos con las reglas del idioma: comparando bytes, «Sala Ámbar» va detrás
+     * de «Sala Zeta». Con ext-intl, Collator con orden numérico («Sala 2» antes que
+     * «Sala 10»); sin ella, comparación natural sin mayúsculas.
+     */
+    private static function compareTitles(string $a, string $b): int
+    {
+        static $collator = false;
+
+        if ($collator === false) {
+            $collator = null;
+
+            if (class_exists(\Collator::class)) {
+                $collator = new \Collator(function_exists('app') ? app()->getLocale() : 'en');
+                $collator->setAttribute(\Collator::NUMERIC_COLLATION, \Collator::ON);
+                // Sin distinguir mayúsculas (como strnatcasecmp), pero sí tildes.
+                $collator->setStrength(\Collator::SECONDARY);
+            }
+        }
+
+        return $collator ? $collator->compare($a, $b) : strnatcasecmp($a, $b);
+    }
+
     private static function compare(CalendarResource $a, CalendarResource $b): int
     {
         $byOrder = match (true) {
@@ -240,7 +263,7 @@ final class ResourceSet implements Countable
             return $byOrder;
         }
 
-        $byTitle = strnatcasecmp($a->title, $b->title);
+        $byTitle = self::compareTitles($a->title, $b->title);
 
         if ($byTitle !== 0) {
             return $byTitle;

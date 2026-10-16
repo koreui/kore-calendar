@@ -211,7 +211,7 @@ final class Marker implements Stringable
     }
 
     /**
-     * Para formatear con Carbon (`translatedFormat`, locale): una fecha UTC con
+     * Para formatear con Carbon (`isoFormat`, locale): una fecha UTC con
      * los mismos campos de pared. No es un instante: no se compara con otros.
      */
     public function toCarbon(): CarbonImmutable
