@@ -118,4 +118,10 @@ class InteractiveCalendar extends KoreCalendar
     {
         return rescue(fn () => DB::transactionLevel(), -1, false);
     }
+
+    /** Solo para tests: conflicts() es protegido (ver KoreCalendar). */
+    public function koreTestConflicts(): array
+    {
+        return $this->conflicts();
+    }
 }

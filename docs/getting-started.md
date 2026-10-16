@@ -52,6 +52,8 @@ El JavaScript lo carga el propio componente cuando aparece (con `@assets`). No h
 | `slot-min-time` / `slot-max-time` | `string` | `00:00` / `24:00` | Banda visible; admite `-02:00` y `26:00` |
 | `max-events` | `int\|null` | `null` | Límite por celda en el mes; el resto va al "+N más" |
 | `now-indicator` | `bool` | `true` | Línea de "ahora" en la rejilla horaria |
+| `business-hours` | `bool\|array` | `false` | Horario laboral: pinta lo que no lo es ([ver](#horario-laboral-y-disponibilidad)) |
+| `highlight-conflicts` | `bool` | `false` | Marca los eventos que se solapan en el mismo recurso |
 | `toolbar` | `bool` | `true` | Barra con navegación y selector de vista |
 | `date-param` / `view-param` | `string` | `date` / `view` | Nombres de los parámetros de la URL |
 
@@ -119,7 +121,58 @@ Editar una ocurrencia pregunta a qué alcanza el cambio: [Series recurrentes](ko
 
 Con recursos también hay **timeline**: el tiempo en horizontal y una fila por recurso, agrupadas por `group` (plegables) y en árbol por `parentId`. Las ranuras se configuran por vista en `timeline.slots`. Con más de `timeline.virtualize_after` filas, dentro de `KoreCalendar` solo se monta una ventana y el resto se pide al hacer scroll.
 
-Cada recurso tiene `id`, `title` y, opcionales, `parentId` (árbol), `group`, `color` (por defecto para sus eventos), `order`, `businessHours` y `meta`. Un evento sin recurso no aparece en las vistas por recurso. Los ids duplicados, los padres que no existen y los ciclos lanzan una excepción.
+Cada recurso tiene `id`, `title` y, opcionales, `parentId` (árbol), `group`, `color` (por defecto para sus eventos), `order`, `businessHours` ([su horario laboral](#horario-laboral-y-disponibilidad)) y `meta`. Un evento sin recurso no aparece en las vistas por recurso. Los ids duplicados, los padres que no existen y los ciclos lanzan una excepción.
+
+## Horario laboral y disponibilidad
+
+`business-hours` (o `business_hours` en el config, o `businessHours()` en `configure()`) pinta con un fondo suave lo que **no** es horario laboral:
+
+```blade
+<x-kore::calendar view="week" :business-hours="true" />   {{-- lunes a viernes, 09:00-17:00 --}}
+
+<x-kore::calendar view="week" :business-hours="[
+    ['daysOfWeek' => [1, 2, 3, 4, 5], 'startTime' => '09:00', 'endTime' => '13:00'],
+    ['daysOfWeek' => [1, 2, 3, 4, 5], 'startTime' => '15:00', 'endTime' => '19:00'],
+]" />
+```
+
+| Valor | Significa |
+|---|---|
+| `true` | Lunes a viernes de 09:00 a 17:00, como FullCalendar |
+| `false`, `null`, `[]` | Sin horario: no se pinta nada y todo vale (no es «cerrado») |
+| Un tramo `['daysOfWeek' => [1, 2], 'startTime' => '08:00', 'endTime' => '14:00']` | Lo que falte toma el valor de `true` |
+| Una lista de tramos | En una lista, cada tramo dice sus `daysOfWeek` (0 = domingo … 6 = sábado) |
+
+- **`endTime` puede pasar de 24:00** (hasta `48:00`): `['daysOfWeek' => [5], 'startTime' => '22:00', 'endTime' => '26:00']` es un turno de noche del viernes al sábado a las 02:00, y la madrugada del sábado cuenta como horario.
+- **Los tramos que se tocan o se solapan se funden en uno**: 09:00-13:00 y 13:00-17:00 son 09:00-17:00.
+- **Horas de pared.** El horario no se mueve con el cambio de hora: las 09:00 son las 09:00 también el día en que el reloj se adelanta o se atrasa.
+- **Un horario mal escrito lanza una excepción** (clave desconocida, día fuera de 0-6, hora que no es `HH:MM`, fin anterior al inicio), con el tramo y la clave en el mensaje.
+
+Dónde se pinta, siempre con elementos decorativos (`aria-hidden`: no se leen, la información accesible es la validación del servidor):
+
+- **Semana, día y recursos**: un bloque por cada tramo no laborable de cada columna.
+- **Timeline**: igual, por fila. Con ranuras de días (`timeline-week`, `timeline-month`) solo se atenúan los días enteros sin ningún tramo.
+- **Mes**: los días sin ningún tramo se atenúan.
+- **Agenda**: nada.
+
+El color es el token `--kore-calendar-non-business`, derivado de `--kore-muted` y redefinido en oscuro; se puede sobrescribir como cualquier otro token.
+
+**Horario por recurso.** El `businessHours` de un recurso gana al del calendario para sus columnas o filas, con la misma forma. `false` (o `[]`) lo deja siempre abierto aunque el calendario tenga horario; `null` (por defecto) hereda el del calendario:
+
+```php
+public function resources(): iterable
+{
+    return [
+        ['id' => 'sala-a', 'title' => 'Sala A', 'businessHours' => ['startTime' => '14:00', 'endTime' => '20:00']],
+        ['id' => 'sala-b', 'title' => 'Sala B'],                              // el del calendario
+        ['id' => 'maquina', 'title' => 'Máquina', 'businessHours' => false],  // siempre abierta
+    ];
+}
+```
+
+**Conflictos.** Con `highlight-conflicts` (`highlightConflicts()` en la clase base) los eventos que se solapan en el mismo recurso (los que no tienen ninguno, entre sí) llevan un icono, un borde y un texto solo para lectores de pantalla («En conflicto con «Reunión B»», traducción `conflict`). Un evento de fondo no cuenta salvo que diga `overlap: false`, y los del mismo `groupId` no chocan entre sí. El aviso es del evento, no de la columna.
+
+Las restricciones (que un evento movido o una selección deban quedar en horario laboral) y la búsqueda de huecos libres están en [KoreCalendar](kore-calendar.md#horario-laboral-y-disponibilidad).
 
 ## Configuración
 
@@ -132,9 +185,14 @@ Cada recurso tiene `id`, `title` y, opcionales, `parentId` (árbol), `group`, `c
 - Hoy lleva `aria-current="date"`. Las cabeceras dicen la fecha completa al lector de pantalla.
 - El título se anuncia al navegar (`aria-live="polite"`).
 - El "+N más" abre un `role=dialog` con el foco atrapado; Escape lo cierra y devuelve el foco al botón.
+- Lo no laborable es decoración (`aria-hidden`). Un evento en conflicto lleva un texto para lectores de pantalla además del icono, y un movimiento fuera de horario se rechaza con un toast que dice el motivo.
 
 ## Notas de implementación
 
 - **Zonas horarias y cambios de hora.** La rejilla trabaja en horas de pared, donde un día mide siempre 24 h. Al volver a un instante, una hora que se repite (otoño) es la primera ocurrencia y una que no existe (primavera) se resuelve hacia delante. PHP no hace esto de forma consistente entre zonas, así que lo hace el paquete.
 - **El límite de eventos es un número.** El modo "auto" de FullCalendar mide alturas en el navegador; el servidor no puede.
 - **Los eventos se piden con el rango dibujado** (con los días de relleno del mes), no con el del mes: si no, desaparecen eventos de la primera y la última semana.
+
+## iCalendar
+
+Exportar e importar `.ics` (Google Calendar, Outlook, Apple): ver [ical.md](ical.md).

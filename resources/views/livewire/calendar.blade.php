@@ -20,6 +20,9 @@
         'selectable' => $settings->selectable,
         'defaultTimed' => $settings->defaultTimedSeconds,
         'locale' => $settings->locale,
+        // Solo para marcar la previsualización fuera de horario; la regla la aplica el servidor.
+        'constrainEvent' => $settings->eventConstraint === 'businessHours',
+        'constrainSelect' => $settings->selectConstraint === 'businessHours',
         'texts' => [
             'grabbed' => $koreCalendar->text('kbd_grabbed'),
             'moving' => '',

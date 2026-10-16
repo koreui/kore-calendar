@@ -4,6 +4,7 @@ namespace KoreUi\Calendar\View;
 
 use DateTimeInterface;
 use InvalidArgumentException;
+use KoreUi\Calendar\Availability\BusinessHours;
 use KoreUi\Calendar\Interaction\Bounds;
 use KoreUi\Calendar\Layout\EventOrder;
 use KoreUi\Calendar\Layout\LayoutOptions;
@@ -54,6 +55,17 @@ final class CalendarSettings
         public readonly ?DateRange $validRange = null,
         /** Los eventos se pueden pulsar (llega a `onEventClick()`): se pintan enfocables aunque el calendario no sea editable. */
         public readonly bool $eventClick = false,
+        // ── Horario laboral y conflictos (docs/calendar.md §7.5, §11). ──
+        /** El del calendario; el de un recurso (`CalendarResource::businessHours`) gana para sus columnas o filas. */
+        public readonly BusinessHours $businessHours = new BusinessHours,
+        /** `'businessHours'`: un evento movido o redimensionado tiene que quedar en horario laboral. `null` = sin regla. */
+        public readonly ?string $eventConstraint = null,
+        /** Lo mismo para seleccionar un rango. */
+        public readonly ?string $selectConstraint = null,
+        /** `false`: no se puede seleccionar un rango que pisa un evento. */
+        public readonly bool $selectOverlap = true,
+        /** Marcar los eventos que se solapan en el mismo recurso. */
+        public readonly bool $highlightConflicts = false,
     ) {}
 
     /**
@@ -140,7 +152,35 @@ final class CalendarSettings
             resourceEditable: (bool) $get('interaction.resource_editable', true),
             validRange: self::validRange($get('interaction.valid_range')),
             eventClick: (bool) $get('interaction.event_click', false),
+            businessHours: BusinessHours::from($get('business_hours', false)),
+            eventConstraint: self::constraint($get('interaction.event_constraint'), 'interaction.event_constraint'),
+            selectConstraint: self::constraint($get('interaction.select_constraint'), 'interaction.select_constraint'),
+            selectOverlap: (bool) $get('interaction.select_overlap', true),
+            highlightConflicts: (bool) $get('highlight_conflicts', false),
         );
+    }
+
+    /**
+     * `'businessHours'` o nada. FullCalendar admite también un `groupId`, un rango o
+     * una lista de eventos como restricción; aquí no, y una errata no se ignora en
+     * silencio: una restricción que no se aplica deja pasar justo lo que debía parar.
+     * `false` y `''` valen como «sin regla» para poder apagar la del config desde `configure()`.
+     */
+    private static function constraint(mixed $value, string $key): ?string
+    {
+        if ($value === null || $value === false || $value === '') {
+            return null;
+        }
+
+        if ($value === 'businessHours') {
+            return $value;
+        }
+
+        throw new InvalidArgumentException(sprintf(
+            '%s solo admite \'businessHours\' o null (llegó %s). La regla de negocio que no sea el horario laboral va en persistMove() / persistResize().',
+            $key,
+            is_string($value) ? "«{$value}»" : get_debug_type($value),
+        ));
     }
 
     /**
@@ -219,6 +259,7 @@ final class CalendarSettings
             $this->defaultAllDayDays, $this->formats, $this->timelineSlot, $this->timelineRowStart, $this->timelineRowLimit, $this->timelineScrollTime,
             $this->editable, $this->selectable, $this->snapSeconds, $this->eventOverlap,
             $this->allDayMaintainDuration, $this->resourceEditable, $this->validRange, $this->eventClick,
+            $this->businessHours, $this->eventConstraint, $this->selectConstraint, $this->selectOverlap, $this->highlightConflicts,
         );
     }
 

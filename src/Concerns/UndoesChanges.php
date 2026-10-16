@@ -110,7 +110,7 @@ trait UndoesChanges
         }
 
         $resize = $snapshot->type === 'resize';
-        $validator = new MutationValidator($settings);
+        $validator = (new MutationValidator($settings, $this->koreResources()))->ignoringBusinessHours();
 
         $refusal = ($resize ? $validator->validateResize($mutation, $instances) : $validator->validateMove($mutation, $instances))
             ?? $this->korePersist(fn () => $resize ? $this->persistResize($current->event, $mutation) : $this->persistMove($current->event, $mutation));

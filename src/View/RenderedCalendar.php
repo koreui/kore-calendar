@@ -2,6 +2,7 @@
 
 namespace KoreUi\Calendar\View;
 
+use KoreUi\Calendar\Events\EventInstance;
 use KoreUi\Calendar\Layout\ListLayout;
 use KoreUi\Calendar\Layout\MonthLayout;
 use KoreUi\Calendar\Layout\TimeGridLayout;
@@ -22,7 +23,33 @@ final class RenderedCalendar
         public readonly MonthLayout|TimeGridLayout|ListLayout|TimelineLayout $layout,
         public readonly Marker $now,
         public readonly ?ResourceSet $resources,
+        /** @var array<string, list<EventInstance>> `instanceId` → los eventos con los que choca (vacío sin `highlightConflicts()`). */
+        public readonly array $conflicts = [],
     ) {}
+
+    /**
+     * Los eventos con los que choca este (para marcarlo y decir con quién).
+     *
+     * @return list<EventInstance>
+     */
+    public function conflictsOf(EventInstance $instance): array
+    {
+        return $this->conflicts[$instance->instanceId] ?? [];
+    }
+
+    /** El texto para lectores de pantalla de un evento en conflicto: «En conflicto con «A», «B»». `null` si no lo está. */
+    public function conflictLabel(EventInstance $instance): ?string
+    {
+        $others = $this->conflictsOf($instance);
+
+        if ($others === []) {
+            return null;
+        }
+
+        $titles = array_unique(array_map(fn (EventInstance $other) => '«'.$other->event->title.'»', $others));
+
+        return $this->text('conflict', ['with' => implode(', ', $titles)]);
+    }
 
     /** Una fecha con uno de los formatos del config (`formats.*`), o un patrón isoFormat directo. */
     public function format(Marker $date, string $format): string

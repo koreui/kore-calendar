@@ -2,6 +2,7 @@
 
 namespace KoreUi\Calendar\Layout;
 
+use KoreUi\Calendar\Availability\BusinessHours;
 use KoreUi\Calendar\Events\EventInstance;
 use KoreUi\Calendar\Layout\Kernel\PlacementKernel;
 use KoreUi\Calendar\Layout\Kernel\Source;
@@ -28,12 +29,17 @@ use KoreUi\Calendar\Time\ViewRange;
  * (`rowStart`, `rowLimit`) y el resto se sustituye por espaciadores. Las filas son
  * de alto variable, así que el espaciador es una estimación (`estimatedRowCount`
  * filas de una subfila); el scroll se corrige al montar la ventana real.
+ *
+ * Horario laboral: cada fila lleva lo no laborable (`offHours`) como bloques en %
+ * del eje, con el horario de su recurso o, si no tiene, el del calendario. Con
+ * ranuras de un día o más (`timeline-week`, `timeline-month`) las horas no se
+ * distinguen, así que solo se atenúan los días enteros sin ningún tramo.
  */
 final class TimelineLayout
 {
     /**
      * @param  list<array{start: int, label: Marker, isMajor: bool}>  $slots
-     * @param  list<array{type: 'group', key: string, label: string, count: int}|array{type: 'resource', key: string, resource: ?CalendarResource, depth: int, group: ?string, events: list<array>, levels: int}>  $rows
+     * @param  list<array{type: 'group', key: string, label: string, count: int}|array{type: 'resource', key: string, resource: ?CalendarResource, depth: int, group: ?string, events: list<array>, levels: int, offHours: list<array{left: float, width: float}>, business: ?string}>  $rows
      */
     private function __construct(
         public readonly ViewRange $range,
@@ -59,6 +65,7 @@ final class TimelineLayout
         int $slotSeconds = 3600,
         ?int $rowStart = null,
         ?int $rowLimit = null,
+        BusinessHours $businessHours = new BusinessHours,
     ): self {
         $axis = new DateRange($range->render->start, $range->render->end);
         $axisSeconds = $axis->seconds();
@@ -71,6 +78,8 @@ final class TimelineLayout
         $window = array_slice($all, $start, $limit);
 
         $rows = [];
+        $hoursOf = [];
+        $computed = [];
 
         foreach ($window as $row) {
             if ($row['type'] === 'group') {
@@ -81,7 +90,13 @@ final class TimelineLayout
 
             $own = array_values(array_filter($instances, fn (EventInstance $i) => self::belongs($i, $row['resource'])));
             [$events, $levels] = self::placeRow($own, $axis, $axisSeconds, $slotSeconds, $options);
-            $rows[] = [...$row, 'events' => $events, 'levels' => $levels];
+
+            // Por recurso y, dentro, por horario: con cientos de filas sin horario propio
+            // todas comparten el del calendario y se calcula una sola vez.
+            $hours = $hoursOf[$row['resource']?->id ?? ''] ??= BusinessHours::forResource($row['resource'], $businessHours);
+            [$off, $business] = $computed[spl_object_id($hours)] ??= self::hours($hours, $axis, $axisSeconds, $slotSeconds);
+
+            $rows[] = [...$row, 'events' => $events, 'levels' => $levels, 'offHours' => $off, 'business' => $business];
         }
 
         $nowOffset = $now->ts - $axis->start->ts;
@@ -212,6 +227,54 @@ final class TimelineLayout
         usort($events, fn ($a, $b) => [$a['left'], $a['level']] <=> [$b['left'], $b['level']]);
 
         return [$events, max(1, count($levels))];
+    }
+
+    /**
+     * Lo no laborable de una fila como bloques en % del eje, y los tramos laborables
+     * para el cliente (`null` si no hace falta: sin horario, o con ranuras de días,
+     * donde un gesto se mueve por días y los tramos de un mes entero pesarían más
+     * en el HTML de cada fila de lo que ayudan).
+     *
+     * @return array{0: list<array{left: float, width: float}>, 1: ?string}
+     */
+    private static function hours(BusinessHours $hours, DateRange $axis, int $axisSeconds, int $slotSeconds): array
+    {
+        if ($hours->isEmpty()) {
+            return [[], null];
+        }
+
+        $pct = fn (int $seconds) => round($seconds / max(1, $axisSeconds) * 100, 4);
+        $block = fn (int $start, int $end) => ['left' => $pct($start - $axis->start->ts), 'width' => $pct($end - $start)];
+
+        if ($slotSeconds < Marker::DAY) {
+            $open = $hours->intervals($axis);
+
+            return [
+                array_map(fn (DateRange $gap) => $block($gap->start->ts, $gap->end->ts), BusinessHours::complement($axis, $open)),
+                BusinessHours::encode($open),
+            ];
+        }
+
+        // Ranuras de días: solo los días sin ningún tramo, y los contiguos (un fin de semana) en un bloque.
+        $closed = [];
+
+        foreach ($axis->eachDay() as $day) {
+            if ($hours->worksOn($day)) {
+                continue;
+            }
+
+            $start = max($day->ts, $axis->start->ts);
+            $end = min($day->ts + Marker::DAY, $axis->end->ts);
+            $last = array_key_last($closed);
+
+            if ($last !== null && $closed[$last][1] === $start) {
+                $closed[$last][1] = $end;
+            } else {
+                $closed[] = [$start, $end];
+            }
+        }
+
+        return [array_map(fn (array $c) => $block($c[0], $c[1]), $closed), null];
     }
 
     /** @return list<array{start: int, label: Marker, isMajor: bool}> */

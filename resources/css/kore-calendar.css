@@ -22,6 +22,18 @@
     --kore-calendar-today: color-mix(in oklch, var(--kore-primary) 8%, transparent);
     --kore-calendar-now: var(--kore-destructive);
     --kore-calendar-other-month: var(--kore-muted-fg);
+    /*
+     * Horas no laborables. --kore-muted a secas (0,97 sobre un fondo de 1,0) casi no
+     * se ve en claro, así que se oscurece un poco con --kore-muted-fg; la transparencia
+     * deja pasar las líneas de la rejilla y el tinte del día de hoy.
+     */
+    --kore-calendar-non-business: color-mix(in oklch, color-mix(in oklch, var(--kore-muted-fg) 12%, var(--kore-muted)) 75%, transparent);
+}
+
+/* En oscuro --kore-muted ya es más claro que el fondo: se usa tal cual. */
+.dark,
+[data-theme='dark'] {
+    --kore-calendar-non-business: color-mix(in oklch, var(--kore-muted) 85%, transparent);
 }
 
 /* ── Eventos ───────────────────────────────────────────────────────────── */
@@ -157,6 +169,42 @@
     pointer-events: none;
 }
 
+/* ── Horario laboral ───────────────────────────────────────────────────── */
+
+/*
+ * Los fondos de lo no laborable son decorativos (aria-hidden) y no reciben el puntero:
+ * un arrastre sigue viendo la celda de debajo. Las posiciones las calcula el layout
+ * (--kc-top/--kc-height en la rejilla horaria, --kc-left/--kc-width en el timeline).
+ */
+.kore-calendar-non-business {
+    position: absolute;
+    pointer-events: none;
+    background: var(--kore-calendar-non-business);
+}
+
+.kore-calendar-non-business-v {
+    inset-inline: 0;
+    top: calc(var(--kc-top) * 1%);
+    height: calc(var(--kc-height) * 1%);
+}
+
+.kore-calendar-non-business-h {
+    inset-block: 0;
+    left: calc(var(--kc-left) * 1%);
+    width: calc(var(--kc-width) * 1%);
+}
+
+.kore-calendar-non-business-day {
+    inset: 0;
+}
+
+/* ── Conflictos ────────────────────────────────────────────────────────── */
+
+/* Un borde fino además del icono: el indicador no depende solo del color. */
+.kore-calendar-conflict {
+    box-shadow: inset 0 0 0 1px var(--kore-destructive);
+}
+
 /* ── Interacción ───────────────────────────────────────────────────────── */
 
 /* La previsualización del gesto: la dibuja JS en una capa wire:ignore. */
@@ -166,6 +214,12 @@
     border-radius: var(--kore-radius-sm);
     background: color-mix(in oklch, var(--kore-primary) 12%, transparent);
     pointer-events: none;
+}
+
+/* Fuera del horario laboral (solo una pista: lo decide el servidor al soltar). */
+.kore-calendar-preview[data-invalid] {
+    border-color: var(--kore-destructive);
+    background: color-mix(in oklch, var(--kore-destructive) 14%, transparent);
 }
 
 .kore-calendar-resize {

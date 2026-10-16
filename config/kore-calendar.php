@@ -78,6 +78,19 @@ return [
     'now_indicator' => true,
 
     /*
+    | Horario laboral (docs/calendar.md §7.5): las horas que NO lo son se pintan con
+    | `--kore-calendar-non-business`. false = sin horario (no se pinta nada y todo
+    | vale); true = lunes a viernes de 09:00 a 17:00; un tramo o una lista de tramos
+    | `['daysOfWeek' => [1, 2, 3], 'startTime' => '08:00', 'endTime' => '14:00']`.
+    | `endTime` admite más de 24:00 ('26:00': un turno de noche). El `businessHours` de
+    | un recurso gana al de aquí para sus columnas o filas.
+    */
+    'business_hours' => false,
+
+    /* Marcar con un icono y un texto para lectores de pantalla los eventos que se solapan en el mismo recurso. */
+    'highlight_conflicts' => false,
+
+    /*
     | Interacción (arrastrar, redimensionar, seleccionar). Todo apagado por
     | defecto: un calendario es de solo lectura hasta que su clase lo diga con
     | `->editable()`. Lo que manda el navegador se vuelve a validar siempre en el
@@ -88,6 +101,9 @@ return [
         'selectable' => false,                // se pueden seleccionar rangos de fechas
         'snap' => null,                       // paso del gesto ('15m'). null = time.slot_duration; si no divide el slot, se usa el slot
         'event_overlap' => true,              // false: ningún evento se puede solapar con otro
+        'event_constraint' => null,           // 'businessHours': un evento movido o redimensionado tiene que quedar en horario laboral (null = sin regla)
+        'select_constraint' => null,          // 'businessHours': lo mismo para seleccionar un rango
+        'select_overlap' => true,             // false: no se puede seleccionar un rango que pisa un evento
         'all_day_maintain_duration' => false, // al pasar de día completo a con hora (o al revés), conservar la duración
         'resource_editable' => true,          // se puede cambiar un evento de recurso
         'event_click' => false,               // los eventos se pueden pulsar (onEventClick). KoreCalendar lo activa solo con eventForm() o si se sobrescribe onEventClick()
@@ -150,6 +166,8 @@ return [
         'resource_locked' => 'Este evento no se puede cambiar de recurso',
         'overlap_rejected' => 'Se solapa con «:title»',
         'out_of_range' => 'Fuera del rango permitido',
+        'outside_business_hours' => 'Fuera del horario laboral',
+        'outside_business_hours_resource' => 'Fuera del horario de :resource',
         'event_not_found' => 'El evento ya no está disponible',
         'resource_not_found' => 'El recurso de destino no existe',
         'invalid_duration' => 'La duración no puede ser cero ni negativa',
@@ -158,6 +176,9 @@ return [
         'event_moved' => '«:title» movido al :date',
         'event_resized' => '«:title» ahora termina :date',
         'event_resized_start' => '«:title» ahora empieza :date',
+
+        // `->highlightConflicts()`: el texto para lectores de pantalla de un evento que se solapa con otros.
+        'conflict' => 'En conflicto con :with',
 
         // Deshacer (`->undoable()`): un toast con la acción tras mover o redimensionar.
         'undo' => 'Deshacer',

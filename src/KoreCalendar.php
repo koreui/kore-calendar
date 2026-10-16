@@ -7,6 +7,7 @@ use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use KoreUi\Calendar\Availability\ConflictFinder;
 use KoreUi\Calendar\Concerns\ManagesEventForm;
 use KoreUi\Calendar\Concerns\ManagesRecurrence;
 use KoreUi\Calendar\Concerns\UndoesChanges;
@@ -76,6 +77,11 @@ use Throwable;
  *
  * Deshacer (`->undoable()`): tras mover o redimensionar, un toast con «Deshacer»
  * que repite el cambio al revés con el mismo hook de persistencia.
+ *
+ * Horario laboral y conflictos (`->businessHours()`, `->eventConstraint()`,
+ * `->selectConstraint()`, `->selectOverlap()`, `->highlightConflicts()`): lo no
+ * laborable se pinta, las restricciones las decide el servidor al validar y
+ * `conflicts()` lista los eventos que se pisan en la vista.
  *
  * Series recurrentes: mover, redimensionar, editar o eliminar una ocurrencia no
  * persiste nada hasta que el usuario elige el alcance (solo esta, esta y las
@@ -257,7 +263,7 @@ abstract class KoreCalendar extends Component
             return $this->koreUnchanged();
         }
 
-        $refusal = (new MutationValidator($settings))->validateMove($mutation, $instances);
+        $refusal = (new MutationValidator($settings, $this->koreResources()))->validateMove($mutation, $instances);
 
         // Válido pero sin alcance: no se guarda nada. Se pregunta DESPUÉS de validar para
         // no hacer elegir entre tres opciones un cambio que de todas formas se rechazaría.
@@ -323,7 +329,7 @@ abstract class KoreCalendar extends Component
             return $this->koreUnchanged();
         }
 
-        $refusal = (new MutationValidator($settings))->validateResize($mutation, $instances);
+        $refusal = (new MutationValidator($settings, $this->koreResources()))->validateResize($mutation, $instances);
 
         if ($refusal === null && $scope === null && $original->isOccurrence()) {
             return $this->koreAskScope('resize', $original, ['edge' => $edge, 'fromStart' => $fromStart]);
@@ -388,7 +394,12 @@ abstract class KoreCalendar extends Component
 
         if ($refusal === null) {
             $selection = MutationBuilder::fromSettings($settings)->select(Marker::fromTimestamp($start), Marker::fromTimestamp($end), $allDay, $target?->id);
-            $refusal = (new MutationValidator($settings))->validateSelection($selection);
+            $validator = new MutationValidator($settings, $this->koreResources());
+
+            // Los eventos de la vista solo se piden si hay una regla que los use (`selectOverlap(false)`):
+            // seleccionar es un gesto frecuente y no debería costar una consulta de más.
+            $refusal = $validator->validateSelection($selection)
+                ?? $validator->validateSelectionRules($selection, $settings->selectOverlap ? [] : $this->koreInstances($settings));
         }
 
         if ($refusal !== null) {
@@ -399,6 +410,29 @@ abstract class KoreCalendar extends Component
         }
 
         $this->onDateSelect($selection);
+    }
+
+    // ── Conflictos ──────────────────────────────────────────────────────
+
+    /**
+     * Los pares de eventos del rango dibujado que se solapan en el mismo recurso (los
+     * que no tienen ninguno, entre sí), con las reglas de `MutationValidator`: sin
+     * contar el mismo `groupId` ni los eventos de fondo, y respetando `overlap: false`.
+     * Sirve para un resumen propio («3 conflictos esta semana»); para marcarlos en el
+     * calendario, `highlightConflicts()`.
+     *
+     * Vuelve a pedir `events()`, como las acciones: no hay caché entre peticiones.
+     *
+     * Protegido a propósito: Livewire deja llamar a cualquier método público
+     * desde el navegador (`$wire.conflicts()`) y le devolvería las instancias
+     * serializadas, `meta` incluido, más de lo que la vista pinta. La subclase lo
+     * usa en su `render()` o en un `#[Computed]` que devuelva solo lo que se muestra.
+     *
+     * @return list<array{0: EventInstance, 1: EventInstance}>
+     */
+    protected function conflicts(): array
+    {
+        return ConflictFinder::find($this->koreInstances($this->koreSettingsResolved()));
     }
 
     // ── Interacción (hooks del consumidor) ──────────────────────────────
@@ -808,6 +842,49 @@ abstract class KoreCalendar extends Component
     protected function resourceEditable(bool $editable = true): static
     {
         return $this->set('interaction.resource_editable', $editable);
+    }
+
+    // Horario laboral y conflictos (config `business_hours`, `interaction.*`, `highlight_conflicts`)
+
+    /**
+     * El horario laboral del calendario: las horas que no lo son se pintan con
+     * `--kore-calendar-non-business`. `true` = lunes a viernes de 09:00 a 17:00; un tramo
+     * (`['daysOfWeek' => [1, 2, 3], 'startTime' => '08:00', 'endTime' => '14:00']`) o una
+     * lista de tramos; `false` = sin horario. El `businessHours` de un recurso gana al de aquí.
+     *
+     * @param  bool|array<int|string, mixed>  $hours
+     */
+    protected function businessHours(bool|array $hours = true): static
+    {
+        return $this->set('business_hours', $hours);
+    }
+
+    /**
+     * `'businessHours'`: un evento movido o redimensionado tiene que quedar dentro del
+     * horario laboral de su recurso destino (o del calendario). Lo decide el servidor; el
+     * navegador solo marca la previsualización. `null` quita la regla.
+     */
+    protected function eventConstraint(?string $constraint = 'businessHours'): static
+    {
+        return $this->set('interaction.event_constraint', $constraint ?? false);
+    }
+
+    /** Lo mismo que `eventConstraint()`, para seleccionar un rango. */
+    protected function selectConstraint(?string $constraint = 'businessHours'): static
+    {
+        return $this->set('interaction.select_constraint', $constraint ?? false);
+    }
+
+    /** `false`: no se puede seleccionar un rango que pisa un evento (salvo los de fondo sin `overlap: false`). */
+    protected function selectOverlap(bool $allowed = true): static
+    {
+        return $this->set('interaction.select_overlap', $allowed);
+    }
+
+    /** Marcar (icono, borde y texto para lectores de pantalla) los eventos que se solapan en el mismo recurso. */
+    protected function highlightConflicts(bool $highlight = true): static
+    {
+        return $this->set('highlight_conflicts', $highlight);
     }
 
     /** Cualquier clave del config, con puntos: `->set('time.event_min_minutes', 20)`. */

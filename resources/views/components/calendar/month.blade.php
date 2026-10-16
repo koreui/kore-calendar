@@ -6,6 +6,9 @@
     evento vive en la lista de la celda donde empieza y se extiende con CSS por
     las columnas que ocupa: el lector de pantalla lo lee en su día, y la rejilla
     sigue siendo filas de celdas.
+
+    Horario laboral: un día sin ningún tramo se atenúa con un fondo decorativo
+    (aria-hidden: la información accesible es la validación del servidor).
 --}}
 @props(['calendar'])
 
@@ -61,6 +64,7 @@
                     <div
                         role="cell"
                         @unless ($cell['isDisabled']) data-kore-drop="day" data-date="{{ $cell['date']->ts }}" @endunless
+                        @if ($cell['business'] !== null) data-business="{{ $cell['business'] }}" @endif
                         @if ($cell['isToday']) aria-current="date" @endif
                         @class([
                             'relative flex min-w-0 flex-col gap-0.5 border-kore-border pb-1',
@@ -69,6 +73,10 @@
                             'bg-kore-muted/40' => $cell['isDisabled'],
                         ])
                     >
+                        @if ($cell['isNonBusiness'])
+                            <div aria-hidden="true" class="kore-calendar-non-business kore-calendar-non-business-day"></div>
+                        @endif
+
                         <div
                             data-kore-calendar-cell="{{ $r * $columns + $c }}"
                             tabindex="{{ $r * $columns + $c === $focusIndex ? '0' : '-1' }}"

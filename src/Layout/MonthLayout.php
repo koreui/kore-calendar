@@ -2,7 +2,9 @@
 
 namespace KoreUi\Calendar\Layout;
 
+use KoreUi\Calendar\Availability\BusinessHours;
 use KoreUi\Calendar\Events\EventInstance;
+use KoreUi\Calendar\Time\DateRange;
 use KoreUi\Calendar\Time\Marker;
 use KoreUi\Calendar\Time\ViewRange;
 use KoreUi\Calendar\Time\WeekRules;
@@ -13,12 +15,14 @@ use KoreUi\Calendar\Time\WeekRules;
  * `rows[i]` = una semana: sus días (con banderas de hoy, de otro mes, deshabilitado),
  * los trozos visibles con su posición en la rejilla CSS (columna de inicio, de
  * fin, fila) y, por celda, cuántos eventos quedaron ocultos tras el "+N más" y
- * cuáles lista su popover.
+ * cuáles lista su popover. Con horario laboral, `isNonBusiness` marca los días en
+ * que no hay ningún tramo (se atenúan), y `business` lleva los tramos del día
+ * para que el cliente marque una previsualización fuera de horario.
  */
 final class MonthLayout
 {
     /**
-     * @param  list<array{days: list<array{date: Marker, isToday: bool, isOther: bool, isDisabled: bool, isPast: bool, hiddenCount: int, popover: list<EventInstance>}>, slices: list<array{instance: EventInstance, key: string, colStart: int, colEnd: int, row: int, isStart: bool, isEnd: bool, display: string, isSlice: bool}>, rowCount: int, weekNumber: ?int}>  $rows
+     * @param  list<array{days: list<array{date: Marker, isToday: bool, isOther: bool, isDisabled: bool, isPast: bool, isNonBusiness: bool, business: ?string, hiddenCount: int, popover: list<EventInstance>}>, slices: list<array{instance: EventInstance, key: string, colStart: int, colEnd: int, row: int, isStart: bool, isEnd: bool, display: string, isSlice: bool}>, rowCount: int, weekNumber: ?int}>  $rows
      */
     private function __construct(
         public readonly ViewRange $range,
@@ -29,7 +33,7 @@ final class MonthLayout
     /**
      * @param  list<EventInstance>  $instances
      */
-    public static function build(ViewRange $range, array $instances, Marker $now, LayoutOptions $options = new LayoutOptions, ?WeekRules $weekNumbers = null): self
+    public static function build(ViewRange $range, array $instances, Marker $now, LayoutOptions $options = new LayoutOptions, ?WeekRules $weekNumbers = null, BusinessHours $businessHours = new BusinessHours): self
     {
         $visible = $range->days();
         $perRow = self::daysPerRow($visible);
@@ -72,12 +76,16 @@ final class MonthLayout
 
             foreach ($days as $c => $day) {
                 $cell = $placement->cells[$c] ?? null;
+                // Un día deshabilitado no se pinta como «no laborable»: ya está atenuado y no se puede usar.
+                $open = $businessHours->isEmpty() || ! $range->active->contains($day) ? null : $businessHours->intervals(DateRange::days($day, 1));
                 $cells[] = [
                     'date' => $day,
                     'isToday' => $day->equals($today),
                     'isOther' => ! $range->current->contains($day),
                     'isDisabled' => ! $range->active->contains($day),
                     'isPast' => $day->isBefore($today),
+                    'isNonBusiness' => $open === [],
+                    'business' => $open === null ? null : BusinessHours::encode($open),
                     'hiddenCount' => $cell?->hiddenCount() ?? 0,
                     'popover' => array_map(fn ($span) => $span->payload->instance, $cell?->all ?? []),
                 ];

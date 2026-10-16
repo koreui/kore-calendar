@@ -2,6 +2,7 @@
 
 namespace KoreUi\Calendar\View;
 
+use KoreUi\Calendar\Availability\ConflictFinder;
 use KoreUi\Calendar\Events\EventCollector;
 use KoreUi\Calendar\Events\EventNormalizer;
 use KoreUi\Calendar\Events\EventSource;
@@ -39,14 +40,18 @@ final class CalendarRenderer
         $options = $settings->layoutOptions;
 
         $layout = match ($settings->view) {
-            'month' => MonthLayout::build($range, $instances, $now, $options, $settings->weekNumbers),
+            'month' => MonthLayout::build($range, $instances, $now, $options, $settings->weekNumbers, $settings->businessHours),
             'list' => ListLayout::build($range, $instances, $now, $options),
             'timeline-day', 'timeline-week', 'timeline-month' => self::timeline($settings, $range, $instances, $now, $resources),
-            'resource-week', 'resource-day' => TimeGridLayout::build($range, $instances, $now, $options, $resources ?? new ResourceSet([]), $settings->datesAboveResources, $settings->slotDuration),
-            default => TimeGridLayout::build($range, $instances, $now, $options, null, false, $settings->slotDuration),
+            'resource-week', 'resource-day' => TimeGridLayout::build($range, $instances, $now, $options, $resources ?? new ResourceSet([]), $settings->datesAboveResources, $settings->slotDuration, $settings->businessHours),
+            default => TimeGridLayout::build($range, $instances, $now, $options, null, false, $settings->slotDuration, $settings->businessHours),
         };
 
-        return new RenderedCalendar($settings, $range, $layout, $now, $resources);
+        // Los conflictos se buscan entre los eventos de TODO el rango dibujado, no solo los visibles
+        // en la vista: en un "+N más" o en otra columna también están, y el aviso va por evento.
+        $conflicts = $settings->highlightConflicts ? ConflictFinder::byInstance(ConflictFinder::find($instances)) : [];
+
+        return new RenderedCalendar($settings, $range, $layout, $now, $resources, $conflicts);
     }
 
     private static function timeline(CalendarSettings $settings, ViewRange $range, array $instances, $now, ?ResourceSet $resources): TimelineLayout
@@ -58,6 +63,7 @@ final class CalendarRenderer
             $range, $instances, $now, $settings->layoutOptions, $resources, $settings->timelineSlot,
             $virtual ? ($settings->timelineRowStart ?? 0) : null,
             $virtual ? $settings->timelineRowLimit : null,
+            $settings->businessHours,
         );
     }
 

@@ -80,6 +80,8 @@ Con ella, una fila con regla entra si `start < $to` **aunque su fin sea anterior
 | `slotDuration('15m')`, `slotMinTime('08:00')`, `slotMaxTime('20:00')` | Rejilla horaria |
 | `maxEvents(?int)` | Límite por celda en el mes |
 | `nowIndicator(bool)` | |
+| `businessHours(bool\|array = true)` | Horario laboral ([ver](#horario-laboral-y-disponibilidad)) |
+| `highlightConflicts(bool = true)` | Marca los eventos que se solapan |
 | `datesAboveResources(bool)` | Cabecera fecha → recursos en vez de recurso → fechas |
 | `eventOrder(string, bool $strict)` | Orden de prioridad (`'start,-duration,allDay,title'`) |
 | `set(string $key, mixed $value)` | Cualquier clave del config, con puntos |
@@ -148,12 +150,111 @@ protected function onDateSelect(Selection $selection): void
 | `selectable(bool = true)` | Seleccionar rangos vacíos (`onDateSelect`) |
 | `snap('15m')` | Rejilla del gesto (por defecto, la del slot) |
 | `eventOverlap(bool)` | Si se permiten solapes |
+| `eventConstraint('businessHours'\|null)` | Un evento movido o redimensionado tiene que quedar en horario laboral |
+| `selectConstraint('businessHours'\|null)` | Lo mismo al seleccionar un rango |
+| `selectOverlap(bool)` | `false`: no se puede seleccionar un rango que pisa un evento |
 | `validRange(?string $start, ?string $end)` | Fechas fuera de las que no se puede soltar |
 | `allDayMaintainDuration(bool = true)` | Conservar la duración al cambiar de tipo |
 | `resourceEditable(bool)` | Si se puede cambiar un evento de recurso |
 | `eventForm(bool = true)` | El formulario de kore-ui para crear y editar eventos |
 | `undoable(bool = true)` | Un toast con «Deshacer» tras mover o redimensionar |
 | `eventClick(bool = true)` | Los eventos se pueden pulsar (`onEventClick()`). Lo activa solo `eventForm()` o sobrescribir el hook; esto es para apagarlo (`false`) |
+
+## Horario laboral y disponibilidad
+
+El horario laboral (`businessHours()`, ver [Calendar](getting-started.md#horario-laboral-y-disponibilidad)) se pinta, y además puede **obligarse**. La decisión es siempre del servidor: el navegador solo marca con un borde rojo la previsualización que cae fuera, y vuelve a validarse al soltar.
+
+```php
+public function configure(): void
+{
+    $this->editable()->selectable()
+        ->businessHours()                  // lunes a viernes, 09:00-17:00 (o el que digas)
+        ->eventConstraint()                // mover y redimensionar, solo dentro de horario
+        ->selectConstraint()               // seleccionar, solo dentro de horario
+        ->selectOverlap(false)             // no seleccionar sobre un evento
+        ->highlightConflicts();
+}
+```
+
+| Método | Rechaza |
+|---|---|
+| `eventConstraint('businessHours')` | Un evento movido o redimensionado cuyo rango entero no cabe en el horario laboral del recurso destino (o del calendario, si no tiene recursos). Con varios recursos, tiene que cumplir el de **todos**. Un evento de día completo no «cabe» en 09:00-17:00: se le pide caer en días en que se trabaja |
+| `selectConstraint('businessHours')` | Una selección con la misma regla; usa el horario del recurso de la columna donde se suelta |
+| `selectOverlap(false)` | Una selección que pisa un evento (con las reglas de `eventOverlap`: los de fondo solo si dicen `overlap: false`; con recursos, solo los de esa columna) |
+
+- **Semiabierto.** El rango tiene que caber entero: `[09:00, 17:00)` cabe, `[16:00, 17:30)` no, y acabar a las 17:00 en punto sí. Un hueco entre dos tramos que se tocan (09-13 y 13-17) no es un hueco.
+- **Sin horario definido, todo vale** (`businessHours` en `false` o vacío): una restricción sin horario no prohíbe nada. FullCalendar rechaza todo en ese caso, que es casi siempre un descuido.
+- **Mensajes** (`translations`): `outside_business_hours` («Fuera del horario laboral») y `outside_business_hours_resource` («Fuera del horario de :resource»), que sale cuando el recurso tiene su propio horario o es el que falla. Salen en el toast de siempre y como anuncio.
+- **Orden de las comprobaciones:** editable → recurso → rango válido → horario laboral → solapes.
+- **El formulario de evento no aplica estas restricciones** (crear y editar con `eventForm()` solo comprueba el rango válido, como siempre): valida `createEvent()` / `updateEvent()` con `BusinessHours` si las necesitas. Y **deshacer** no las aplica: devuelve el evento a donde estaba, aunque ya estuviera fuera de horario.
+- **Solo `'businessHours'`.** FullCalendar admite también un `groupId` o un rango como restricción; aquí una restricción desconocida lanza una excepción y la regla de negocio que no sea el horario va en `persistMove()` / `persistResize()`.
+
+### Conflictos
+
+`conflicts()` (protegido) devuelve los pares de eventos del rango dibujado que se solapan, para un resumen propio («3 conflictos esta semana»). Es protegido porque Livewire deja llamar a cualquier método público desde el navegador y le devolvería los eventos serializados, `meta` incluido: exponlo con un `#[Computed]` que devuelva solo lo que vas a mostrar.
+
+```php
+#[Computed]
+public function summary(): string
+{
+    $pairs = $this->conflicts();   // list<array{0: EventInstance, 1: EventInstance}>
+
+    return count($pairs).' conflictos: '.collect($pairs)
+        ->map(fn ($p) => $p[0]->event->title.' / '.$p[1]->event->title)
+        ->implode(', ');
+}
+```
+
+Mismas reglas que el servidor al soltar un evento (`Collision`): se solapan en el tiempo (semiabierto, con instantes exactos en la hora repetida del otoño), comparten recurso (los eventos sin ninguno, entre sí), no son el mismo evento ni del mismo `groupId`, y uno bloquea al otro. Por defecto cualquier solape entre eventos que ocupan sitio es un conflicto, aunque el calendario permita solapar; un evento de fondo solo lo es si dice `overlap: false`. Cada par sale una vez, ordenado por inicio. `conflicts()` vuelve a pedir `events()`, como las acciones.
+
+`ConflictFinder::find($instances, overlapAllowed: false)` es la función pura que hay debajo, útil fuera de Livewire. Con `overlapAllowed: true` solo cuentan los que declaran `overlap: false`, que es lo que el servidor impediría.
+
+### Buscar hueco: `AvailabilityFinder`
+
+Puro, sin interfaz: los huecos libres dentro del horario laboral donde cabe una duración, para «buscar hueco» o «siguiente disponible».
+
+```php
+use KoreUi\Calendar\Availability\AvailabilityFinder;
+use KoreUi\Calendar\Availability\BusinessHours;
+use KoreUi\Calendar\Events\EventNormalizer;
+use KoreUi\Calendar\Resources\ResourceSet;
+use KoreUi\Calendar\Time\DateRange;
+use KoreUi\Calendar\Time\Marker;
+use KoreUi\Calendar\Time\WallClock;
+
+$clock = new WallClock('Europe/Madrid');
+$normalizer = new EventNormalizer($clock);
+
+// Los eventos de la semana como EventInstance (hora de pared en la zona de la vista).
+// Con series, EventCollector::collect() las expande; normalize() es para eventos sueltos.
+$instancias = Meeting::query()->whereBetween('starts_at', [$from, $to])->get()
+    ->map(fn (Meeting $m) => $normalizer->normalize($m->toCalendarEvent()))
+    ->all();
+
+$sala = (new ResourceSet($this->resources()))->find('sala-a');
+$horario = BusinessHours::forResource($sala, new BusinessHours(true));   // el de la sala, o el del calendario
+
+$huecos = AvailabilityFinder::freeSlots(
+    instances: $instancias,
+    hours: $horario,
+    range: new DateRange(Marker::parse('2026-10-14'), Marker::parse('2026-10-21')),
+    durationSeconds: 3600,                                       // una hora
+    resourceId: 'sala-a',                                        // solo los eventos de esa sala
+    snapSeconds: 900,                                            // inicios a :00, :15, :30, :45
+);
+
+$siguiente = $huecos[0]->start ?? null;   // el primer instante en que cabe una hora (Marker, hora de pared)
+```
+
+- Devuelve `list<DateRange>` en horas de pared: cada uno es el **mayor** tramo libre (no uno por posible inicio) que empieza en el primer instante válido; `start + duración` siempre cabe dentro. Para ofrecer varias horas, ve sumando el paso.
+- Ocupa lo mismo que rechazaría el servidor al soltar encima: cualquier evento que ocupe sitio, y los de fondo con `overlap: false`. Un evento de día completo ocupa el día entero.
+- `resourceId: null` no filtra: cualquier evento ocupa. Con un id, solo los que lo tienen.
+- Con `snapSeconds`, los inicios se alinean **hacia delante** a múltiplos del paso contados desde las 00:00; un hueco que deja de caber tras alinear se descarta.
+- Sin horario definido (`new BusinessHours(false)`), todo el rango es laborable.
+
+### Horario y recursos en código
+
+`BusinessHours` es independiente de la vista: `intervals($range)` (los tramos laborables dentro de un rango), `outside($range)` (lo que no), `covers($range)` (cabe entero), `coversDays($range)` y `worksOn($day)`. Todo en `Marker`, la hora de pared de la vista. `BusinessHours::forResource($resource, $delDelCalendario)` resuelve cuál manda.
 
 ## Crear y editar eventos
 
@@ -367,3 +468,6 @@ Para eliminar, `deleteEvent(CalendarEvent $event, array $data = [])` sigue el mi
 - **Cambiar de día completo a con hora** una ocurrencia con `all`: `deltaSeconds` solo desplaza; la serie conserva su tipo. Mira `$mutation->isAllDayChange()` y rechaza (devuelve un texto) o resuélvelo tú.
 - **Una excepción movida fuera del rango cargado.** `EloquentSource` trae las excepciones por su NUEVA fecha: si una se mueve a un mes que no se está viendo, la ocurrencia original reaparece en el mes de origen hasta que se carga la excepción. Si lo necesitas, devuelve también desde `events()` las excepciones cuyo `recurrence_id` caiga en el rango.
 
+## iCalendar
+
+Servir el calendario como `.ics` desde un controlador (`ICalResponse::download()`) o usar un `.ics` como fuente de eventos (`ICalSource::fromFile()`): ver [ical.md](ical.md).

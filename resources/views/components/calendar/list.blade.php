@@ -34,6 +34,7 @@
                                     'end' => '00:00 – '.$calendar->time($instance->range->end),
                                 };
                                 $style = \KoreUi\Calendar\View\EventColor::style($instance->event->color);
+                                $conflicts = $calendar->conflictsOf($instance);
                             @endphp
                             <li class="flex items-center gap-3 px-4 py-2 text-sm">
                                 <span class="w-36 shrink-0 whitespace-nowrap tabular-nums text-kore-muted-fg">{{ $when }}</span>
@@ -42,6 +43,10 @@
                                     <a href="{{ $instance->event->url }}" class="min-w-0 truncate font-medium hover:underline">{{ $instance->event->title }}</a>
                                 @else
                                     <span class="min-w-0 truncate font-medium">{{ $instance->event->title }}</span>
+                                @endif
+                                @if ($conflicts !== [])
+                                    <x-lucide-triangle-alert class="size-3.5 shrink-0 text-kore-destructive-text" aria-hidden="true" />
+                                    <span class="sr-only">{{ $calendar->conflictLabel($instance) }}</span>
                                 @endif
                             </li>
                         @endforeach

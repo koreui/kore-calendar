@@ -2,7 +2,10 @@
 
 namespace KoreUi\Calendar\Interaction;
 
+use KoreUi\Calendar\Availability\BusinessHours;
+use KoreUi\Calendar\Availability\Collision;
 use KoreUi\Calendar\Events\EventInstance;
+use KoreUi\Calendar\Resources\ResourceSet;
 use KoreUi\Calendar\Time\DateRange;
 use KoreUi\Calendar\Time\Marker;
 use KoreUi\Calendar\View\CalendarSettings;
@@ -13,14 +16,38 @@ use KoreUi\Calendar\View\CalendarSettings;
  * traducido y listo para un toast.
  *
  * Las comprobaciones van de la más barata y más clara a la más cara, y paran en
- * la primera que falla: editabilidad, rango válido, solapes. No hay `eventAllow`
- * ni `eventConstraint` (funciones JS en FullCalendar): la regla de negocio que
- * no cabe aquí va en `persistMove()` / `persistResize()`, que pueden rechazar
- * con un texto.
+ * la primera que falla: editabilidad, rango válido, horario laboral, solapes. No
+ * hay `eventAllow` ni un `eventConstraint` con funciones, grupos o rangos (en
+ * FullCalendar son funciones JS): lo único que se declara es `'businessHours'`, y la
+ * regla de negocio que no cabe aquí va en `persistMove()` / `persistResize()`, que
+ * pueden rechazar con un texto.
+ *
+ * El horario laboral y los solapes de una selección necesitan saber más que la
+ * mutación: `$resources` (el horario de CADA recurso gana al del calendario) y, para
+ * seleccionar, los eventos de la vista. Sin `$resources` solo manda el del calendario.
  */
 final class MutationValidator
 {
-    public function __construct(private readonly CalendarSettings $settings) {}
+    private bool $checkHours = true;
+
+    public function __construct(
+        private readonly CalendarSettings $settings,
+        private readonly ?ResourceSet $resources = null,
+    ) {}
+
+    /**
+     * El mismo validador sin la regla del horario laboral. Deshacer lo usa: devuelve el
+     * evento a donde estaba, y si ese sitio ya estaba fuera de horario (datos importados,
+     * un evento creado antes de que hubiera horario) rechazarlo dejaría al usuario sin
+     * poder deshacer un cambio que acaba de hacer. Si estaba bien, tampoco hace falta.
+     */
+    public function ignoringBusinessHours(): self
+    {
+        $copy = clone $this;
+        $copy->checkHours = false;
+
+        return $copy;
+    }
 
     /**
      * @param  iterable<EventInstance>  $instances  Los eventos de la vista, incluido el que se mueve.
@@ -35,7 +62,7 @@ final class MutationValidator
             return Messages::get('resource_locked');
         }
 
-        return $this->rangeError($mutation) ?? $this->overlapError($mutation, $instances);
+        return $this->rangeError($mutation) ?? $this->hoursError($mutation) ?? $this->overlapError($mutation, $instances);
     }
 
     /**
@@ -47,13 +74,33 @@ final class MutationValidator
             return Messages::get('not_editable');
         }
 
-        return $this->rangeError($mutation) ?? $this->overlapError($mutation, $instances);
+        return $this->rangeError($mutation) ?? $this->hoursError($mutation) ?? $this->overlapError($mutation, $instances);
     }
 
-    /** Una selección solo tiene que caer dentro del rango válido. */
+    /**
+     * Una selección tiene que caer dentro del rango válido. Es lo único que
+     * comprueba el formulario de evento, que también lo usa: editar un evento
+     * existente no puede rechazarse por solaparse consigo mismo.
+     */
     public function validateSelection(Selection $selection): ?string
     {
         return $this->withinRange($selection->startMarker->ts, $selection->endMarker->ts);
+    }
+
+    /**
+     * Lo que además exige SELECCIONAR un rango (`selectConstraint`, `selectOverlap`).
+     * Aparte de `validateSelection()` porque necesita los eventos de la vista, y
+     * `KoreCalendar` solo los pide si hay una regla que los use.
+     *
+     * @param  iterable<EventInstance>  $instances
+     */
+    public function validateSelectionRules(Selection $selection, iterable $instances = []): ?string
+    {
+        $outsideHours = $this->settings->selectConstraint === 'businessHours'
+            ? $this->hoursFor($selection->startMarker, $selection->endMarker, $selection->allDay, $selection->resourceId === null ? [] : [$selection->resourceId])
+            : null;
+
+        return $outsideHours ?? $this->selectionOverlapError($selection, $instances);
     }
 
     private function rangeError(EventMutation $mutation): ?string
@@ -103,7 +150,6 @@ final class MutationValidator
     {
         $subject = $mutation->event;
         $subjectBlocks = ! $this->settings->eventOverlap || $subject->overlap === false;
-        $lanes = self::lanes($mutation->resourceIds);
 
         foreach ($instances as $other) {
             $event = $other->event;
@@ -112,17 +158,11 @@ final class MutationValidator
                 continue;
             }
 
-            if ($subject->groupId !== null && $event->groupId === $subject->groupId) {
+            if (Collision::sameGroup($subject, $event) || ! Collision::blocks($subjectBlocks, $event)) {
                 continue;
             }
 
-            $occupies = ! in_array($event->display, ['background', 'none'], true);
-
-            if (! (($subjectBlocks && $occupies) || $event->overlap === false)) {
-                continue;
-            }
-
-            if (array_intersect($lanes, self::lanes($event->resourceIds)) === [] || ! self::intersects($mutation, $other)) {
+            if (! Collision::sharesLane($mutation->resourceIds, $event->resourceIds) || ! self::intersects($mutation, $other)) {
                 continue;
             }
 
@@ -133,29 +173,93 @@ final class MutationValidator
     }
 
     /**
-     * @param  list<string|int>  $resourceIds
-     * @return list<string>
+     * `selectOverlap(false)`: no se puede seleccionar un rango que pisa un evento. Mismas
+     * reglas que al soltar un evento, con la selección como quien bloquea (no es un
+     * evento: no tiene id, ni grupo, ni `overlap` propio). En una vista por recurso
+     * solo cuentan los eventos de esa columna o fila; en una vista sin recursos todos
+     * comparten la única columna que hay.
+     *
+     * @param  iterable<EventInstance>  $instances
      */
-    private static function lanes(array $resourceIds): array
+    private function selectionOverlapError(Selection $selection, iterable $instances): ?string
     {
-        // '' nunca es un id de recurso (CalendarEvent rechaza los vacíos).
-        return $resourceIds === [] ? [''] : array_map('strval', $resourceIds);
+        if ($this->settings->selectOverlap) {
+            return null;
+        }
+
+        $lane = $selection->resourceId === null ? [] : [$selection->resourceId];
+
+        foreach ($instances as $other) {
+            if (! Collision::blocks(true, $other->event)) {
+                continue;
+            }
+
+            if ($lane !== [] && ! Collision::sharesLane($lane, $other->event->resourceIds)) {
+                continue;
+            }
+
+            $exact = ! $selection->allDay;
+
+            if (Collision::intersects($selection->startMarker, $selection->endMarker, $exact ? $selection->start : null, $exact ? $selection->end : null, $other)) {
+                return Messages::get('overlap_rejected', ['title' => $other->event->title]);
+            }
+        }
+
+        return null;
     }
 
     /**
-     * Semiabierto. Con instantes exactos en los dos lados se comparan instantes:
-     * en la hora repetida del otoño, 02:30+02:00 y 02:30+01:00 tienen el mismo
-     * marker y compararlos por pared daría un solape que no existe. El resto
-     * (día completo, hora sin offset) se compara en markers.
+     * `eventConstraint('businessHours')`: el evento tiene que quedar dentro del
+     * horario laboral de CADA recurso al que pertenece tras el cambio (o del
+     * calendario, si no tiene recursos).
      */
-    private static function intersects(EventMutation $mutation, EventInstance $other): bool
+    private function hoursError(EventMutation $mutation): ?string
     {
-        if (! $mutation->allDay && ! $other->allDay && $other->exactStart !== null && $other->exactEnd !== null) {
-            return $mutation->start->getTimestamp() < $other->exactEnd->getTimestamp()
-                && $other->exactStart->getTimestamp() < $mutation->endInstant->getTimestamp();
+        if (! $this->checkHours || $this->settings->eventConstraint !== 'businessHours') {
+            return null;
         }
 
-        return $mutation->startMarker->ts < $other->range->end->ts
-            && $other->range->start->ts < $mutation->endMarker->ts;
+        return $this->hoursFor($mutation->startMarker, $mutation->endMarker, $mutation->allDay, $mutation->resourceIds);
+    }
+
+    /**
+     * El rango cabe en el horario de cada recurso destino. Un evento de día completo
+     * no tiene hora, así que no se le pide «caber» en 09:00-17:00: se le pide caer en
+     * días en que se trabaja (`coversDays()`).
+     *
+     * @param  list<string|int>  $resourceIds
+     */
+    private function hoursFor(Marker $start, Marker $end, bool $allDay, array $resourceIds): ?string
+    {
+        if ($end->ts <= $start->ts) {
+            return null;
+        }
+
+        $span = new DateRange($start, $end);
+        $targets = $resourceIds === [] ? [null] : array_map(fn ($id) => $this->resources?->find($id), $resourceIds);
+
+        foreach ($targets as $resource) {
+            $hours = BusinessHours::forResource($resource, $this->settings->businessHours);
+
+            if ($allDay ? $hours->coversDays($span) : $hours->covers($span)) {
+                continue;
+            }
+
+            return $resource === null
+                ? Messages::get('outside_business_hours')
+                : Messages::get('outside_business_hours_resource', ['resource' => $resource->title]);
+        }
+
+        return null;
+    }
+
+    /** Semiabierto y con instantes exactos cuando los hay: ver `Collision::intersects()`. */
+    private static function intersects(EventMutation $mutation, EventInstance $other): bool
+    {
+        return Collision::intersects(
+            $mutation->startMarker, $mutation->endMarker,
+            $mutation->allDay ? null : $mutation->start, $mutation->allDay ? null : $mutation->endInstant,
+            $other,
+        );
     }
 }

@@ -6,6 +6,11 @@
     y después el eje de horas con una columna por día o por (día, recurso). Las
     posiciones llegan en porcentaje del eje (--kc-top, --kc-height, --kc-left,
     --kc-right): el navegador escala sin JavaScript.
+
+    Horario laboral: lo que no lo es se pinta como bloques decorativos en % del eje
+    (aria-hidden: la información accesible es la validación del servidor), y cada
+    destino de arrastre lleva sus tramos laborables en data-business para que la
+    previsualización del cliente se marque si cae fuera.
 --}}
 @props(['calendar'])
 
@@ -90,11 +95,13 @@
                 @php
                     $starting = array_values(array_filter($layout->allDay['slices'], fn ($s) => $s['colStart'] === $i));
                     $cell = $layout->allDay['cells'][$i];
+                    $dayBusiness = $layout->hours[$i]['day'] ?? null;
                 @endphp
                 <div
                     role="cell"
                     data-kore-drop="allday"
                     data-date="{{ $c['date']->ts }}"
+                    @if ($dayBusiness !== null) data-business="{{ $dayBusiness }}" @endif
                     @if ($c['resource']) data-resource="{{ $c['resource']->id }}" @endif
                     @class(['relative min-w-0 border-l border-kore-border py-0.5', 'kore-calendar-day-today' => $c['isToday']])
                 >
@@ -127,11 +134,15 @@
             </div>
 
             @foreach ($layout->lanes as $i => $lane)
+                @php
+                    $hours = $layout->hours[$i] ?? ['off' => [], 'axis' => null];
+                @endphp
                 <div
                     role="cell"
                     data-kore-drop="time"
                     data-origin="{{ $columns[$i]['date']->ts + $calendar->settings->layoutOptions->slotMin }}"
                     data-axis="{{ $layout->axisSeconds }}"
+                    @if ($hours['axis'] !== null) data-business="{{ $hours['axis'] }}" @endif
                     @if ($columns[$i]['resource']) data-resource="{{ $columns[$i]['resource']->id }}" @endif
                     @class(['relative border-l border-kore-border', 'kore-calendar-day-today' => $columns[$i]['isToday']])
                 >
@@ -140,6 +151,10 @@
                             <div @class(['h-[var(--kore-calendar-slot-height)] border-kore-border', 'border-t' => $slot['start'] % 3600 === 0, 'border-t border-dashed border-kore-border/50' => $slot['start'] % 3600 !== 0])></div>
                         @endforeach
                     </div>
+
+                    @foreach ($hours['off'] as $off)
+                        <div aria-hidden="true" class="kore-calendar-non-business kore-calendar-non-business-v" style="--kc-top: {{ $off['top'] }}; --kc-height: {{ $off['height'] }}"></div>
+                    @endforeach
 
                     <ul class="absolute inset-0 mx-0.5">
                         @foreach ($lane['events'] as $item)

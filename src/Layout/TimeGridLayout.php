@@ -2,11 +2,13 @@
 
 namespace KoreUi\Calendar\Layout;
 
+use KoreUi\Calendar\Availability\BusinessHours;
 use KoreUi\Calendar\Events\EventInstance;
 use KoreUi\Calendar\Layout\Kernel\Span;
 use KoreUi\Calendar\Layout\Kernel\TimeColumnPlacer;
 use KoreUi\Calendar\Resources\CalendarResource;
 use KoreUi\Calendar\Resources\ResourceSet;
+use KoreUi\Calendar\Time\DateRange;
 use KoreUi\Calendar\Time\Marker;
 use KoreUi\Calendar\Time\ViewRange;
 
@@ -23,6 +25,10 @@ use KoreUi\Calendar\Time\ViewRange;
  *
  * Los eventos sin recurso no aparecen en las vistas por recurso, como en
  * FullCalendar: no hay columna a la que pertenezcan.
+ *
+ * Horario laboral: por cada columna (`hours`), las horas que NO son laborables como
+ * bloques en % del eje, igual que los eventos, para que Blade solo los pinte. El
+ * horario de un recurso gana al del calendario para sus columnas.
  */
 final class TimeGridLayout
 {
@@ -31,6 +37,8 @@ final class TimeGridLayout
      * @param  array{slices: list<array>, cells: list<array{hiddenCount: int, popover: list<EventInstance>}>, rowCount: int}  $allDay
      * @param  list<array{events: list<array>, hidden: list<array>}>  $lanes
      * @param  list<array{start: int, label: Marker}>  $slots
+     * @param  list<array{off: list<array{top: float, height: float}>, axis: ?string, day: ?string}>  $hours  Por columna: lo no laborable en % del eje, y los
+     *                                                                                                          tramos laborables del eje y del día (`BusinessHours::encode()`) o `null` sin horario.
      */
     private function __construct(
         public readonly ViewRange $range,
@@ -41,6 +49,7 @@ final class TimeGridLayout
         public readonly int $axisSeconds,
         public readonly ?float $nowTop,
         public readonly ?int $nowColumn,
+        public readonly array $hours = [],
     ) {}
 
     /**
@@ -55,6 +64,7 @@ final class TimeGridLayout
         ?ResourceSet $resources = null,
         bool $datesAboveResources = false,
         int $slotDuration = 1800,
+        BusinessHours $businessHours = new BusinessHours,
     ): self {
         $today = $now->startOfDay();
         $days = $range->days();
@@ -72,7 +82,50 @@ final class TimeGridLayout
             axisSeconds: $axis,
             nowTop: $nowTop,
             nowColumn: $nowColumn,
+            hours: self::hours($columns, $options, $axis, $businessHours),
         );
+    }
+
+    /**
+     * Lo no laborable de cada columna, en % del eje. El eje de una columna es de
+     * horas de pared (`fecha + slotMin` hasta `fecha + slotMax`), así que el horario
+     * no se mueve con el cambio de hora: las 09:00 caen siempre en el mismo %.
+     *
+     * Los tramos laborables viajan también como texto para el cliente: la
+     * previsualización de un gesto se marca si cae fuera. Es una pista; decide el servidor.
+     *
+     * @return list<array{off: list<array{top: float, height: float}>, axis: ?string, day: ?string}>
+     */
+    private static function hours(array $columns, LayoutOptions $options, int $axis, BusinessHours $calendar): array
+    {
+        $pct = fn (int $seconds) => round($seconds / max(1, $axis) * 100, 4);
+        $byResource = [];
+        $result = [];
+
+        foreach ($columns as $column) {
+            $hours = $byResource[$column['resource']?->id ?? ''] ??= BusinessHours::forResource($column['resource'], $calendar);
+
+            if ($hours->isEmpty()) {
+                $result[] = ['off' => [], 'axis' => null, 'day' => null];
+
+                continue;
+            }
+
+            $date = $column['date'];
+            $span = new DateRange($date->addSeconds($options->slotMin), $date->addSeconds($options->slotMax));
+            $open = $hours->intervals($span);
+
+            $result[] = [
+                'off' => array_map(
+                    fn (DateRange $gap) => ['top' => $pct($gap->start->ts - $span->start->ts), 'height' => $pct($gap->seconds())],
+                    BusinessHours::complement($span, $open),
+                ),
+                'axis' => BusinessHours::encode($open),
+                'day' => BusinessHours::encode($hours->intervals(DateRange::days($date, 1))),
+            ];
+        }
+
+        return $result;
     }
 
     /** @return list<array{date: Marker, resource: ?CalendarResource, isToday: bool, isPast: bool}> */

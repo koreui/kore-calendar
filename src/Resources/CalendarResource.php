@@ -25,7 +25,9 @@ final readonly class CalendarResource
     private const REQUIRED = ['id', 'title'];
 
     /**
-     * @param  ?array<string, mixed>  $businessHours  Horario propio del recurso; `null` = el del calendario.
+     * @param  bool|array<int|string, mixed>|null  $businessHours  Horario propio del recurso, con la forma de `BusinessHours`: `null` =
+     *                                                            el del calendario; `false` o `[]` = sin horario (siempre abierto, aunque el calendario tenga uno).
+     *                                                            No se valida aquí sino al usarlo (`BusinessHours::forResource()`), con el id del recurso en el mensaje.
      * @param  array<string, mixed>  $meta
      */
     public function __construct(
@@ -35,7 +37,7 @@ final readonly class CalendarResource
         public ?string $group = null,
         public ?string $color = null,
         public int|string|null $order = null,
-        public ?array $businessHours = null,
+        public bool|array|null $businessHours = null,
         public array $meta = [],
     ) {
         if (self::isBlank($id)) {
@@ -59,7 +61,7 @@ final readonly class CalendarResource
     }
 
     /**
-     * @param  ?array<string, mixed>  $businessHours
+     * @param  bool|array<int|string, mixed>|null  $businessHours
      * @param  array<string, mixed>  $meta
      */
     public static function make(
@@ -69,7 +71,7 @@ final readonly class CalendarResource
         ?string $group = null,
         ?string $color = null,
         int|string|null $order = null,
-        ?array $businessHours = null,
+        bool|array|null $businessHours = null,
         array $meta = [],
     ): self {
         return new self(

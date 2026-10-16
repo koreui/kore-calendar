@@ -35,6 +35,10 @@ export default function KoreCalendarInteraction(config = {}) {
         defaultTimed: config.defaultTimed ?? 3600,
         locale: config.locale ?? 'es',
         texts: config.texts ?? {},
+        // Marcar la previsualización fuera del horario laboral (data-business). Solo es una
+        // pista: el servidor decide y vuelve a validar al soltar.
+        constrainEvent: config.constrainEvent ?? false,
+        constrainSelect: config.constrainSelect ?? false,
 
         gesture: null,
         keyboard: null,
@@ -315,10 +319,12 @@ export default function KoreCalendarInteraction(config = {}) {
             if (!range) return;
 
             const base = layer.getBoundingClientRect();
+            const check = this.gesture?.type === 'select' ? this.constrainSelect : this.constrainEvent;
 
-            for (const rect of rectsFor(this.$root, range)) {
+            for (const rect of rectsFor(this.$root, range, check)) {
                 const box = document.createElement('div');
                 box.className = 'kore-calendar-preview';
+                if (rect.off) box.dataset.invalid = '';
                 box.style.cssText = `left:${rect.left - base.left}px;top:${rect.top - base.top}px;width:${rect.width}px;height:${rect.height}px`;
                 layer.appendChild(box);
             }
@@ -369,11 +375,26 @@ export function readEvent(el) {
 }
 
 /**
+ * ¿El tramo [from, to) de un destino cae fuera de su horario laboral? `business` es
+ * el data-business del destino: tramos `inicio:fin` en markers separados por comas,
+ * vacío si ese día no se trabaja, o ausente (undefined) si no hay horario.
+ * Un evento de día completo no tiene hora: solo importa que el día se trabaje.
+ */
+function offHours(business, from, to, allDay) {
+    if (business === undefined) return false;
+
+    const spans = business ? business.split(',').map((s) => s.split(':').map(Number)) : [];
+
+    return allDay ? spans.length === 0 : !spans.some(([a, b]) => a <= from && to <= b);
+}
+
+/**
  * Los rectángulos de pantalla que cubre un rango: las celdas de día que toca, o
  * el tramo de cada columna horaria / fila de timeline. Solo los destinos del
- * mismo recurso (si lo hay).
+ * mismo recurso (si lo hay). Con `check`, cada uno dice si su tramo cae fuera de
+ * horario (`off`).
  */
-function rectsFor(root, range) {
+function rectsFor(root, range, check = false) {
     const rects = [];
     const sameResource = (el) => !range.resource || el.dataset.resource === String(range.resource);
 
@@ -382,28 +403,35 @@ function rectsFor(root, range) {
 
         const d = el.dataset;
         const r = el.getBoundingClientRect();
+        let rect;
+        let from;
+        let to;
 
         if (d.koreDrop === 'day' || d.koreDrop === 'allday') {
             if (!range.allDay && d.koreDrop === 'allday') continue;
             const day = Number(d.date);
-            if (day + DAY > range.start && day < range.end) rects.push(r);
-            continue;
+            if (day + DAY <= range.start || day >= range.end) continue;
+            rect = { left: r.left, top: r.top, width: r.width, height: r.height };
+            from = Math.max(range.start, day);
+            to = Math.min(range.end, day + DAY);
+        } else {
+            if (range.allDay && d.koreDrop === 'time') continue;
+
+            const origin = Number(d.origin);
+            const axis = Number(d.axis);
+            from = Math.max(range.start, origin);
+            to = Math.min(range.end, origin + axis);
+            if (to <= from) continue;
+
+            const a = (from - origin) / axis;
+            const b = (to - origin) / axis;
+
+            rect = d.koreDrop === 'timeline'
+                ? { left: r.left + a * r.width, top: r.top + 2, width: (b - a) * r.width, height: r.height - 4 }
+                : { left: r.left + 2, top: r.top + a * r.height, width: r.width - 4, height: (b - a) * r.height };
         }
 
-        if (range.allDay && d.koreDrop === 'time') continue;
-
-        const origin = Number(d.origin);
-        const axis = Number(d.axis);
-        const from = Math.max(range.start, origin);
-        const to = Math.min(range.end, origin + axis);
-        if (to <= from) continue;
-
-        const a = (from - origin) / axis;
-        const b = (to - origin) / axis;
-
-        rects.push(d.koreDrop === 'timeline'
-            ? { left: r.left + a * r.width, top: r.top + 2, width: (b - a) * r.width, height: r.height - 4 }
-            : { left: r.left + 2, top: r.top + a * r.height, width: r.width - 4, height: (b - a) * r.height });
+        rects.push({ ...rect, off: check && offHours(d.business, from, to, range.allDay) });
     }
 
     return rects;

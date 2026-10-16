@@ -11,6 +11,10 @@
     `data-kore-event` es el id del evento, que comparten todas las ocurrencias de una
     serie; `data-kore-instance`, el que distingue cada una y el que se manda al servidor.
 
+    Con `highlightConflicts()`, un evento que se solapa con otros lleva data-conflict, un
+    icono (decorativo) y un texto solo para lectores de pantalla que dice con quién. El
+    aviso es del evento, no de la columna: en una vista por recurso sus trozos lo llevan todos.
+
     Si el calendario tiene clic activo (eventForm() o un onEventClick() propio), un
     evento sin `url` también es enfocable aunque no se pueda mover: lleva
     data-clickable y Intro (o un clic) lo abre.
@@ -39,6 +43,7 @@
     // El asa va en el borde real del evento: un trozo que sigue en la semana
     // siguiente no se redimensiona desde aquí.
     $resizable = $display !== 'list-item' && $isEnd && \KoreUi\Calendar\Interaction\Editability::canResize($event, $calendar->settings);
+    $conflicts = $calendar->conflictsOf($instance);
 @endphp
 
 <{{ $tag }}
@@ -54,6 +59,7 @@
     @if ($clickable) data-clickable @endif
     @if (($movable || $clickable) && ! $event->url) tabindex="0" role="button" @endif
     @if ($resizable) data-resizable @endif
+    @if ($conflicts !== []) data-conflict @endif
     @if (! $isStart) data-continues-before @endif
     @if (! $isEnd) data-continues-after @endif
     @if ($style) style="{{ $style }}" @endif
@@ -62,7 +68,8 @@
         'kore-calendar-event rounded-kore-sm px-1.5 py-0.5' => $display !== 'list-item',
         'flex items-center gap-1.5 rounded-kore-sm px-1 py-0.5 text-kore-fg hover:bg-kore-muted' => $display === 'list-item',
         'h-full' => $display === 'timed',
-        'relative' => $resizable,
+        'relative' => $resizable || $conflicts !== [],
+        'kore-calendar-conflict pe-4' => $conflicts !== [],
         'cursor-grab touch-manipulation select-none' => $movable,
         'cursor-pointer' => $clickable && ! $movable,
     ]) }}
@@ -82,6 +89,11 @@
         <span class="block truncate">
             @if ($showTime)<span class="tabular-nums">{{ $calendar->time($instance->range->start) }}</span> @endif<span class="font-medium">{{ $event->title }}</span>
         </span>
+    @endif
+
+    @if ($conflicts !== [])
+        <x-lucide-triangle-alert class="absolute end-0.5 top-0.5 size-3 text-kore-destructive-text" aria-hidden="true" />
+        <span class="sr-only">{{ $calendar->conflictLabel($instance) }}</span>
     @endif
 
     @if ($resizable)

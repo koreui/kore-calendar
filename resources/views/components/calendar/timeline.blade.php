@@ -9,6 +9,10 @@
     Con muchos recursos solo se monta una ventana de filas; los espaciadores de
     arriba y abajo ocupan el alto estimado del resto, y KoreCalendarTimeline pide
     al servidor la ventana nueva al hacer scroll (solo dentro de KoreCalendar).
+
+    Horario laboral: lo no laborable de cada fila (el de su recurso, o el del
+    calendario) son bloques decorativos en % del eje, aria-hidden. Los tramos
+    laborables viajan en data-business para marcar la previsualización del cliente.
 --}}
 @props(['calendar', 'mode' => 'links'])
 
@@ -115,9 +119,14 @@
                         data-kore-drop="timeline"
                         data-origin="{{ $layout->range->render->start->ts }}"
                         data-axis="{{ $layout->axisSeconds }}"
+                        @if ($row['business'] !== null) data-business="{{ $row['business'] }}" @endif
                         @if ($row['resource']) data-resource="{{ $row['resource']->id }}" @endif
                         style="--kc-levels: {{ $row['levels'] }}"
                     >
+                        @foreach ($row['offHours'] as $off)
+                            <div aria-hidden="true" class="kore-calendar-non-business kore-calendar-non-business-h" style="--kc-left: {{ $off['left'] }}; --kc-width: {{ $off['width'] }}"></div>
+                        @endforeach
+
                         <ul class="absolute inset-0">
                             @foreach ($row['events'] as $item)
                                 <li
