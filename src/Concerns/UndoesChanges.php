@@ -5,7 +5,6 @@ namespace KoreUi\Calendar\Concerns;
 use KoreUi\Calendar\Interaction\EventMutation;
 use KoreUi\Calendar\Interaction\Events\EventMoved;
 use KoreUi\Calendar\Interaction\Events\EventResized;
-use KoreUi\Calendar\Interaction\Messages;
 use KoreUi\Calendar\Interaction\MutationValidator;
 use KoreUi\Calendar\Interaction\UndoSnapshot;
 use Livewire\Attributes\Locked;
@@ -65,7 +64,7 @@ trait UndoesChanges
 
         $this->koreLastChange = UndoSnapshot::before($type, $mutation)->toArray();
 
-        $this->toast()->info($message)->action(Messages::get('undo'), 'undoLastChange')->send();
+        $this->toast()->info($message)->action($this->koreText('undo'), 'undoLastChange')->send();
     }
 
     /**
@@ -95,7 +94,7 @@ trait UndoesChanges
 
         if ($current === null) {
             // Cambió de semana o se borró: el evento ya no está en la vista.
-            $this->koreReject('undo_failed', Messages::get('event_not_found'), stale: true);
+            $this->koreReject('undo_failed', $this->koreText('event_not_found'), stale: true);
 
             return;
         }
@@ -126,6 +125,6 @@ trait UndoesChanges
             ? new EventResized(static::class, $current->event, $mutation)
             : new EventMoved(static::class, $current->event, $mutation));
 
-        $this->toast()->success(Messages::get('undo_done'))->send();
+        $this->toast()->success($this->koreText('undo_done'))->send();
     }
 }

@@ -26,6 +26,7 @@ use KoreUi\Calendar\Interaction\MutationRejected;
 use KoreUi\Calendar\Interaction\MutationValidator;
 use KoreUi\Calendar\Interaction\Selection;
 use KoreUi\Calendar\Resources\ResourceSet;
+use KoreUi\Calendar\Support\Locale;
 use KoreUi\Calendar\Time\Marker;
 use KoreUi\Calendar\Time\ViewRange;
 use KoreUi\Calendar\View\CalendarRenderer;
@@ -229,14 +230,14 @@ abstract class KoreCalendar extends Component
         $settings = $this->koreSettingsResolved();
 
         if (! Bounds::contains($start)) {
-            return $this->koreReject('move_rejected', Messages::get('out_of_range'));
+            return $this->koreReject('move_rejected', $this->koreText('out_of_range'));
         }
 
         $instances = $this->koreInstances($settings);
         $original = self::koreFind($instances, $id);
 
         if ($original === null) {
-            return $this->koreReject('move_rejected', Messages::get('event_not_found'), stale: true);
+            return $this->koreReject('move_rejected', $this->koreText('event_not_found'), stale: true);
         }
 
         $resourceIds = null;
@@ -246,14 +247,14 @@ abstract class KoreCalendar extends Component
             $target = $this->koreResources()->find($resourceId);
 
             if ($target === null) {
-                return $this->koreReject('move_rejected', Messages::get('resource_not_found'));
+                return $this->koreReject('move_rejected', $this->koreText('resource_not_found'));
             }
 
             // Con el id del recurso tal como lo conoce el ResourceSet (1 y '1' son el mismo).
             $resourceIds = MutationBuilder::resourcesAfterDrop($original->event->resourceIds, $target->id, $fromResourceId);
 
             if ($resourceIds === null) {
-                return $this->koreReject('move_rejected', Messages::get('invalid_change'));
+                return $this->koreReject('move_rejected', $this->koreText('invalid_change'));
             }
         }
 
@@ -309,20 +310,20 @@ abstract class KoreCalendar extends Component
         $settings = $this->koreSettingsResolved();
 
         if (! Bounds::contains($edge)) {
-            return $this->koreReject('resize_rejected', Messages::get('out_of_range'));
+            return $this->koreReject('resize_rejected', $this->koreText('out_of_range'));
         }
 
         $instances = $this->koreInstances($settings);
         $original = self::koreFind($instances, $id);
 
         if ($original === null) {
-            return $this->koreReject('resize_rejected', Messages::get('event_not_found'), stale: true);
+            return $this->koreReject('resize_rejected', $this->koreText('event_not_found'), stale: true);
         }
 
         $mutation = MutationBuilder::fromSettings($settings)->resize($original, Marker::fromTimestamp($edge), $fromStart);
 
         if ($mutation === null) {
-            return $this->koreReject('resize_rejected', Messages::get('invalid_duration'));
+            return $this->koreReject('resize_rejected', $this->koreText('invalid_duration'));
         }
 
         if ($mutation->isNoop()) {
@@ -385,8 +386,8 @@ abstract class KoreCalendar extends Component
         }
 
         $refusal = match (true) {
-            ! Bounds::contains($start, $end) => Messages::get('out_of_range'),
-            $resourceId !== null && $target === null => Messages::get('resource_not_found'),
+            ! Bounds::contains($start, $end) => $this->koreText('out_of_range'),
+            $resourceId !== null && $target === null => $this->koreText('resource_not_found'),
             default => null,
         };
 
@@ -456,7 +457,7 @@ abstract class KoreCalendar extends Component
      */
     protected function persistMove(CalendarEvent $event, EventMutation $mutation)
     {
-        return 'Este calendario todavía no guarda los cambios: implementa persistMove() en '.static::class.'.';
+        return $this->koreText('hook_missing', ['hook' => 'persistMove', 'class' => static::class]);
     }
 
     /**
@@ -466,7 +467,7 @@ abstract class KoreCalendar extends Component
      */
     protected function persistResize(CalendarEvent $event, EventMutation $mutation)
     {
-        return 'Este calendario todavía no guarda los cambios: implementa persistResize() en '.static::class.'.';
+        return $this->koreText('hook_missing', ['hook' => 'persistResize', 'class' => static::class]);
     }
 
     /**
@@ -519,7 +520,7 @@ abstract class KoreCalendar extends Component
      */
     protected function createEvent(array $data)
     {
-        return 'Este calendario todavía no crea eventos: implementa createEvent() en '.static::class.'.';
+        return $this->koreText('hook_missing', ['hook' => 'createEvent', 'class' => static::class]);
     }
 
     /**
@@ -536,7 +537,7 @@ abstract class KoreCalendar extends Component
      */
     protected function updateEvent(CalendarEvent $event, array $data)
     {
-        return 'Este calendario todavía no guarda los cambios de un evento: implementa updateEvent() en '.static::class.'.';
+        return $this->koreText('hook_missing', ['hook' => 'updateEvent', 'class' => static::class]);
     }
 
     /**
@@ -552,7 +553,7 @@ abstract class KoreCalendar extends Component
      */
     protected function deleteEvent(CalendarEvent $event)
     {
-        return 'Este calendario todavía no elimina eventos: implementa deleteEvent() en '.static::class.'.';
+        return $this->koreText('hook_missing', ['hook' => 'deleteEvent', 'class' => static::class]);
     }
 
     // ── Interacción (piezas) ────────────────────────────────────────────
@@ -621,7 +622,7 @@ abstract class KoreCalendar extends Component
             $result = $hook();
 
             if ($result === false || (is_string($result) && trim($result) === '')) {
-                throw new MutationRejected(Messages::get('persist_failed'));
+                throw new MutationRejected($this->koreText('persist_failed'));
             }
 
             if (is_string($result)) {
@@ -637,16 +638,16 @@ abstract class KoreCalendar extends Component
             return $e->getMessage();
         } catch (ValidationException $e) {
             // Una regla de negocio del consumidor, no un fallo: se muestra su motivo.
-            return $e->validator->errors()->first() ?: Messages::get('persist_failed');
+            return $e->validator->errors()->first() ?: $this->koreText('persist_failed');
         } catch (AuthorizationException) {
             // `$this->authorize('update', $meeting)` dentro del hook.
-            return Messages::get('not_editable');
+            return $this->koreText('not_editable');
         } catch (Throwable $e) {
             // No se traga: es un fallo del consumidor (o de su base de datos) y tiene
             // que llegar a su log. Al usuario solo le decimos que no se guardó.
             report($e);
 
-            return Messages::get('persist_failed');
+            return $this->koreText('persist_failed');
         }
     }
 
@@ -668,6 +669,18 @@ abstract class KoreCalendar extends Component
         }
     }
 
+    /** El idioma de este calendario (`->locale()`, `kore-calendar.locale` o el de la aplicación): `en` o `es`. */
+    protected function koreLocale(): string
+    {
+        return Locale::resolve($this->koreSettings['locale'] ?? null);
+    }
+
+    /** Un texto de interfaz en el idioma de este calendario. Los motivos de rechazo y los toasts salen por aquí. */
+    protected function koreText(string $key, array $replace = []): string
+    {
+        return Messages::get($key, $replace, $this->koreLocale());
+    }
+
     /**
      * Rechazo: un toast con el motivo y la respuesta que hace que el cliente
      * deshaga su cambio optimista. No se vuelve a pintar (nada cambió), salvo si
@@ -677,7 +690,7 @@ abstract class KoreCalendar extends Component
      */
     protected function koreReject(string $titleKey, string $reason, bool $stale = false): array
     {
-        $this->toast()->error(Messages::get($titleKey), $reason)->send();
+        $this->toast()->error($this->koreText($titleKey), $reason)->send();
 
         if (! $stale) {
             $this->skipRender();
@@ -720,7 +733,7 @@ abstract class KoreCalendar extends Component
         return Messages::get($key, [
             'title' => $event->title,
             'date' => $when->toCarbon()->locale($settings->locale)->isoFormat($allDay ? 'LL' : 'LLL'),
-        ]);
+        ], $settings->locale);
     }
 
     // ── Configuración fluida (para configure()) ─────────────────────────

@@ -3,6 +3,7 @@
 namespace KoreUi\Calendar\Overlays;
 
 use KoreUi\Calendar\Interaction\Messages;
+use KoreUi\Calendar\Support\Locale;
 use KoreUi\Overlay\OverlayComponent;
 use Livewire\Attributes\Locked;
 
@@ -56,12 +57,17 @@ class RecurrenceScope extends OverlayComponent
     #[Locked]
     public string $eventTitle = '';
 
-    public function mount(string $calendar, string $action = 'move', string $title = ''): void
+    /** El idioma del calendario que lo abre: el diálogo es un componente aparte y no ve su configuración. */
+    #[Locked]
+    public string $calendarLocale = '';
+
+    public function mount(string $calendar, string $action = 'move', string $title = '', ?string $locale = null): void
     {
         $this->calendar = $calendar;
         // Lo que no se conoce es mover: el texto genérico menos engañoso.
         $this->action = isset(self::TITLES[$action]) ? $action : 'move';
         $this->eventTitle = $title;
+        $this->calendarLocale = Locale::resolve($locale);
     }
 
     // ── Overlay ─────────────────────────────────────────────────────────
@@ -122,7 +128,7 @@ class RecurrenceScope extends OverlayComponent
     public function render()
     {
         return view('kore-calendar::livewire.recurrence-scope', [
-            'koreHeading' => Messages::get(self::TITLES[$this->action]),
+            'koreHeading' => Messages::get(self::TITLES[$this->action], locale: $this->calendarLocale),
         ]);
     }
 }

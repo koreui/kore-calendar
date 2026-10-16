@@ -1,7 +1,7 @@
 {{--
     Formulario de un evento (crear y editar), dentro del overlay de kore-ui.
 
-    Solo componentes de kore-ui. Los textos salen de kore-calendar.translations.
+    Solo componentes de kore-ui. Los textos salen de Messages (lang/ y el override `translations`), en el idioma del calendario que lo abrió.
 
     - `novalidate`: los campos llevan `required` por el asterisco de la etiqueta, pero
       el aviso lo da el servidor, en el idioma del calendario. Sin esto el navegador
@@ -11,7 +11,7 @@
       una ida y vuelta al servidor, y el formulario solo guarda con `save()`.
 --}}
 @php
-    $t = fn (string $key, array $replace = []) => \KoreUi\Calendar\Interaction\Messages::get($key, $replace);
+    $t = fn (string $key, array $replace = []) => \KoreUi\Calendar\Interaction\Messages::get($key, $replace, $calendarLocale);
 @endphp
 
 <form wire:submit="save" novalidate class="flex flex-col gap-4 p-6 text-start">

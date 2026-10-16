@@ -8,6 +8,7 @@ use KoreUi\Calendar\Availability\BusinessHours;
 use KoreUi\Calendar\Interaction\Bounds;
 use KoreUi\Calendar\Layout\EventOrder;
 use KoreUi\Calendar\Layout\LayoutOptions;
+use KoreUi\Calendar\Support\Locale;
 use KoreUi\Calendar\Time\DateRange;
 use KoreUi\Calendar\Time\Marker;
 use KoreUi\Calendar\Time\ViewOptions;
@@ -27,6 +28,7 @@ final class CalendarSettings
         public readonly string $view,
         public readonly Marker $date,
         public readonly WallClock $clock,
+        /** El idioma de los textos y de las fechas: `en` o `es`, ya resuelto (ver `Support\Locale`). */
         public readonly string $locale,
         public readonly WeekRules $weekRules,
         public readonly ?WeekRules $weekNumbers,
@@ -79,12 +81,15 @@ final class CalendarSettings
                 : config("kore-calendar.{$key}", $default);
         };
 
-        $locale = (string) ($get('locale') ?? app()->getLocale());
+        // Un solo idioma para textos y fechas. El pedido tal cual (`es_MX`, `en_GB`) solo lo usan
+        // las reglas de región, que no tienen textos: primer día de la semana y orden alfabético.
+        $requested = Locale::requested(is_string($overrides['locale'] ?? null) ? $overrides['locale'] : null);
+        $locale = Locale::resolve($requested);
         $clock = new WallClock($get('timezone') ?? config('app.timezone', 'UTC'));
         $firstDay = $get('first_day') ?? config('kore-ui.form.datepicker.start_of_week', 1);
         $numbering = $get('week_numbers', false);
 
-        $weekRules = WeekRules::resolve((int) $firstDay, $numbering === 'locale' ? 'locale' : 'iso', $locale);
+        $weekRules = WeekRules::resolve((int) $firstDay, $numbering === 'locale' ? 'locale' : 'iso', $requested);
         $weekNumbers = $numbering ? $weekRules : null;
 
         $date = $get('date');
@@ -103,7 +108,7 @@ final class CalendarSettings
         }
 
         $layout = new LayoutOptions(
-            order: new EventOrder((string) $get('event_order', EventOrder::DEFAULT), $locale),
+            order: new EventOrder((string) $get('event_order', EventOrder::DEFAULT), $requested),
             orderStrict: (bool) $get('event_order_strict', false),
             maxEvents: self::intOrNull($get('month.max_events')),
             maxEventRows: self::intOrNull($get('month.max_event_rows')),

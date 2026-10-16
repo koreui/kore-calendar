@@ -13,7 +13,7 @@ use Symfony\Component\Finder\Finder;
  *
  * Todo lo que llega al usuario —`aria-label`, `placeholder`, `title`,
  * `aria-roledescription` y los valores por defecto de las props de texto— sale
- * de `config('kore-calendar.translations.*')`.
+ * de `Messages` (`lang/{es,en}/calendar.php`, con el override `translations` del config).
  *
  * Este cepo mira lo contrario de lo que parece: no busca palabras inglesas —esa
  * lista siempre se queda corta— sino **literales sin interpolar**. Da igual el
@@ -64,7 +64,7 @@ it('ningún texto de interfaz está incrustado en una vista', function () {
     expect($problemas)->toBe([], implode("\n", array_merge(
         ['Texto de interfaz que no se puede traducir sin publicar la vista:'],
         $problemas,
-        ['', 'Sácalo a kore-calendar.translations (config/kore-calendar.php).'],
+        ['', 'Sácalo a lang/{es,en}/calendar.php y tráelo con $calendar->text(…).'],
     )));
 });
 
@@ -118,7 +118,7 @@ it('ningún texto de interfaz va pegado a una interpolación', function () {
     expect($problemas)->toBe([], implode("\n", array_merge(
         ['Texto de interfaz escrito junto a una interpolación:'],
         $problemas,
-        ['', 'Saca la frase ENTERA a kore-calendar.translations, con un :marcador dentro.'],
+        ['', 'Saca la frase ENTERA a lang/{es,en}/calendar.php, con un :marcador dentro.'],
     )));
 });
 
@@ -190,7 +190,7 @@ it('ningún texto de interfaz está incrustado en un binding de Alpine', functio
     expect($problemas)->toBe([], implode("\n", array_merge(
         ['Texto de interfaz escrito dentro de una expresión de Alpine:'],
         $problemas,
-        ['', "Sácalo a kore-calendar.translations y tráelo con @js(config('kore-calendar.translations.…'))."],
+        ['', 'Sácalo a lang/{es,en}/calendar.php y tráelo con @js($calendar->text(…)).'],
     )));
 });
 
@@ -237,6 +237,6 @@ it('ninguna prop de texto trae su valor por defecto escrito a mano', function ()
     expect($problemas)->toBe([], implode("\n", array_merge(
         ['Props de texto con el valor por defecto escrito en la vista:'],
         $problemas,
-        ['', 'Pon null y resuélvelo con config(\'kore-calendar.translations.…\') dentro del @php.'],
+        ['', 'Pon null y resuélvelo con Messages::get(…) dentro del @php.'],
     )));
 });

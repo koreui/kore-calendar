@@ -190,7 +190,7 @@ public function configure(): void
 
 - **Semiabierto.** El rango tiene que caber entero: `[09:00, 17:00)` cabe, `[16:00, 17:30)` no, y acabar a las 17:00 en punto sí. Un hueco entre dos tramos que se tocan (09-13 y 13-17) no es un hueco.
 - **Sin horario definido, todo vale** (`businessHours` en `false` o vacío): una restricción sin horario no prohíbe nada. FullCalendar rechaza todo en ese caso, que es casi siempre un descuido.
-- **Mensajes** (`translations`): `outside_business_hours` («Fuera del horario laboral») y `outside_business_hours_resource` («Fuera del horario de :resource»), que sale cuando el recurso tiene su propio horario o es el que falla. Salen en el toast de siempre y como anuncio.
+- **Mensajes** (`lang/` y `translations`): `outside_business_hours` («Fuera del horario laboral») y `outside_business_hours_resource` («Fuera del horario de :resource»), que sale cuando el recurso tiene su propio horario o es el que falla. Salen en el toast de siempre y como anuncio.
 - **Orden de las comprobaciones:** editable → cambio de recurso permitido → rango válido → horario laboral → solapes. Antes de todas, el recurso destino tiene que existir en `resources()`.
 - **El formulario de evento no aplica estas restricciones** (crear y editar con `eventForm()` solo comprueba el rango válido, como siempre): valida `createEvent()` / `updateEvent()` con `BusinessHours` si las necesitas. Y **deshacer** no las aplica: devuelve el evento a donde estaba, aunque ya estuviera fuera de horario.
 - **Solo `'businessHours'`.** FullCalendar admite también un `groupId` o un rango como restricción; aquí una restricción desconocida lanza una excepción y la regla de negocio que no sea el horario va en `persistMove()` / `persistResize()`.
@@ -211,7 +211,7 @@ public function summary(): string
 }
 ```
 
-Mismas reglas que el servidor al soltar un evento (`Collision`): se solapan en el tiempo (semiabierto, con instantes exactos en la hora repetida del otoño), comparten recurso (los eventos sin ninguno, entre sí), no son el mismo evento ni del mismo `groupId`, y uno bloquea al otro. Por defecto cualquier solape entre eventos que ocupan sitio es un conflicto, aunque el calendario permita solapar; un evento de fondo solo lo es si dice `overlap: false`. Cada par sale una vez, ordenado por inicio. `conflicts()` vuelve a pedir `events()`, como las acciones.
+Mismas reglas que el servidor al soltar un evento (`Collision`): se solapan en el tiempo (semiabierto, con instantes exactos en la hora repetida del otoño), comparten recurso (los eventos sin ninguno, entre sí), no son el mismo evento ni del mismo `groupId`, y uno bloquea al otro. Por defecto es un conflicto el solape de dos eventos con hora del mismo recurso (o los dos sin recurso, como en una agenda personal), aunque el calendario permita solapar. Un evento de día completo (vacaciones, un congreso) es contexto y no choca con nada, y uno de fondo tampoco, salvo que digan `overlap: false`: entonces chocan con todo lo que se les pone encima en su carril. Cada par sale una vez, ordenado por inicio. `conflicts()` vuelve a pedir `events()`, como las acciones.
 
 `ConflictFinder::find($instances, overlapAllowed: false)` es la función pura que hay debajo, útil fuera de Livewire. Con `overlapAllowed: true` solo cuentan los que declaran `overlap: false`, que es lo que el servidor impediría.
 
@@ -313,7 +313,7 @@ El layout necesita `<livewire:kore-overlay-manager />` (el formulario es un over
 - **No te fíes del navegador, y el calendario tampoco.** El aviso del formulario es un evento de Livewire que cualquiera puede lanzar con lo que quiera dentro, así que el calendario ignora el que lleva el id de otro calendario o llega sin `eventForm()`, busca el evento entre los de `events()` (un id ajeno o de otra semana se rechaza), y revisa cada campo: tipos, fechas que existen, recurso de `resources()`, color de la lista y `validRange`.
 - **Qué NO comprueba:** los solapes (`eventOverlap(false)`), los permisos ni las reglas de negocio. Van en el hook, que puede rechazar con un texto o lanzar una `AuthorizationException` (`$this->authorize('update', $meeting)`), igual que en `persistMove()`.
 - **Personalizar:** `onDateSelect()` y `onEventClick()` se pueden sobrescribir (con `parent::` para conservar lo del formulario). Sobrescribir `onEventClick()` basta para que los eventos sean pulsables sin formulario: se pintan enfocables (`role="button"`) y el hook recibe el `CalendarEvent` ya resuelto.
-- **Textos:** todos están en `kore-calendar.translations` (`form_*`, `color_*`, `event_created`…).
+- **Textos:** todos están en `lang/{en,es}/calendar.php` (`form_*`, `color_*`, `event_created`…) y se cambian con `translations`: ver [Idioma y traducciones](configuration.md#idioma-y-traducciones). El formulario habla el idioma del calendario que lo abre.
 
 ## Deshacer
 
@@ -344,7 +344,7 @@ arrastrar ─▶ moveEvent(instanceId, …) ──▶ valida ──▶ { ok: fal
 elegir    ─▶ applyRecurrenceScope('this') ─▶ vuelve a resolver y a validar ─▶ persistMove($event, $mutation con scope)
 ```
 
-- **El diálogo** (`kore-calendar-recurrence-scope`, un overlay de kore-ui con tres botones y «Cancelar») se abre solo; necesita el `<livewire:kore-overlay-manager />` en el layout, como el formulario. Los textos son `scope_*` en `translations`.
+- **El diálogo** (`kore-calendar-recurrence-scope`, un overlay de kore-ui con tres botones y «Cancelar») se abre solo; necesita el `<livewire:kore-overlay-manager />` en el layout, como el formulario. Los textos son `scope_*` (`lang/` y `translations`) y salen en el idioma del calendario.
 - **No se pregunta por lo que se rechazaría**: el diálogo sale después de validar (editable, rango, solapes), y soltar la ocurrencia donde estaba tampoco pregunta.
 - **La acción pendiente** vive en `$koreRecurrencePending`, una propiedad `#[Locked]`: el navegador solo puede elegir el alcance de una acción que el servidor ya aceptó. Guarda los argumentos del gesto, no la mutación, y al elegir se repite **todo el camino de siempre**: la ocurrencia se vuelve a buscar (puede haber cambiado o desaparecido, y entonces se rechaza), el destino se vuelve a ajustar y se valida. Un alcance que no existe, o ninguna acción pendiente, no hacen nada; la pendiente se consume antes de intentarlo.
 - **Identificar la ocurrencia.** Todas comparten `event->id`, así que el cliente manda el `instanceId` (`data-kore-instance`) en `moveEvent`, `resizeEvent` y `clickEvent`. El servidor busca primero por `instanceId` y, si no, por el id del evento (lo que mandaban los clientes anteriores); pero un id de serie no identifica una ocurrencia y se rechaza.

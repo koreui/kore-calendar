@@ -83,8 +83,7 @@ it('ninguna prop declarada se queda sin leer', function () {
  * mientras su texto esperaba en `config/kore-ui.php`. Una clave que no lee nadie
  * es una promesa de traducción que no se cumple.
  *
- * El propio `config/kore-calendar.php` lo avisa: «una clave aquí que ningún
- * código lee es una promesa falsa». Este test lo hace cumplir.
+ * Aquí las claves son las de `lang/{es,en}/calendar.php`.
  */
 it('ninguna clave de traducción se queda sin usar', function () {
     // Las que se piden con el nombre construido al vuelo. El grep no las ve, y
@@ -93,21 +92,15 @@ it('ninguna clave de traducción se queda sin usar', function () {
     // `view_`: el toolbar pide `'view_'.$view`.
     $dinamicas = ['view_'];
 
-    $config = file_get_contents(__DIR__.'/../../config/kore-calendar.php');
-
+    // Las claves de los dos idiomas (que tengan las mismas lo comprueba IdiomasTest).
     $claves = [];
-    if (preg_match_all("/'translations'\s*=>\s*\[(.*?)\n\s*\],/s", $config, $bloques)) {
-        foreach ($bloques[1] as $bloque) {
-            preg_match_all("/'(\w+)'\s*=>/", $bloque, $m);
-            $claves = array_merge($claves, $m[1]);
-        }
+    foreach (glob(__DIR__.'/../../lang/*/calendar.php') as $archivo) {
+        $claves = array_merge($claves, array_keys(require $archivo));
     }
+    $claves = array_values(array_unique($claves));
 
-    // Si el regex deja de encontrar el bloque, el test pasaría sin mirar nada. El
-    // bloque puede estar vacío (fase 1), pero tiene que existir y el regex tiene
-    // que verlo: con claves, tiene que haberlas extraído.
-    expect(str_contains($config, "'translations' => ["))->toBeTrue('no se encuentra el bloque `translations` en config/kore-calendar.php');
-    expect(count($bloques[1] ?? []))->toBe(1, 'el regex no reconoce el bloque `translations`');
+    // Si el glob deja de encontrar los archivos, el test pasaría sin mirar nada.
+    expect($claves)->not->toBeEmpty('no se encuentran los archivos lang/*/calendar.php');
 
     $fuentes = '';
     foreach ([
@@ -137,7 +130,7 @@ it('ninguna clave de traducción se queda sin usar', function () {
     expect($huerfanas)->toBe([], implode("\n", array_merge(
         ['Claves de traducción que no lee nadie:'],
         $huerfanas,
-        ['', 'O se conectan donde hacían falta, o se quitan de la configuración.'],
+        ['', 'O se conectan donde hacían falta, o se quitan de lang/es/calendar.php y lang/en/calendar.php.'],
     )));
 });
 

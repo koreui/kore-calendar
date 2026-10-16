@@ -111,7 +111,7 @@ it('mover una ocurrencia sin alcance no persiste: devuelve needsScope y abre el 
     $open = rsDispatched($t, 'kore:open');
 
     expect($open['name'])->toBe('kore-calendar-recurrence-scope')
-        ->and($open['arguments'])->toBe(['calendar' => $t->id(), 'action' => 'move', 'title' => 'Standup'])
+        ->and($open['arguments'])->toBe(['calendar' => $t->id(), 'action' => 'move', 'title' => 'Standup', 'locale' => 'es'])
         ->and($open['overlayAttributes'])->toBe(['title' => 'Mover un evento recurrente']);
 
     // Lo pendiente: la acción y lo que el navegador mandó, no una mutación.
@@ -423,7 +423,7 @@ it('guardar una ocurrencia desde el formulario pide alcance y no llama a updateE
     $t->assertDispatched('kore:open')->assertNotDispatched('kore:toast');
 
     expect(Cal::$updated)->toBe([])
-        ->and(rsDispatched($t, 'kore:open')['arguments'])->toBe(['calendar' => $t->id(), 'action' => 'edit', 'title' => 'Standup'])
+        ->and(rsDispatched($t, 'kore:open')['arguments'])->toBe(['calendar' => $t->id(), 'action' => 'edit', 'title' => 'Standup', 'locale' => 'es'])
         ->and(rsDispatched($t, 'kore:open')['overlayAttributes']['title'])->toBe('Editar un evento recurrente');
 
     // Lo pendiente son los datos ya validados, sin instantes (Livewire no lleva un Carbon).

@@ -21,10 +21,9 @@ class KoreCalendarServiceProvider extends ServiceProvider
      * Como `mergeConfigFrom`, pero con los bloques asociativos fundidos en profundidad.
      *
      * `mergeConfigFrom` usa `array_merge`, que solo mira las claves de primer nivel: quien
-     * publica el config y deja un `translations` con una sola traducción pierde las demás
-     * (y un `formats`, un `time` o un `interaction` a medias, el resto de su bloque), y el
-     * texto sin traducción sale como la clave. Aquí lo publicado se funde sobre los valores
-     * del paquete, a cualquier profundidad, con una excepción: las LISTAS se sustituyen
+     * publica el config y deja un `formats`, un `time` o un `interaction` a medias pierde
+     * el resto de su bloque. Aquí lo publicado se funde sobre los valores del paquete, a
+     * cualquier profundidad, con una excepción: las LISTAS se sustituyen
      * enteras. Un `views` de dos vistas tiene que ser esas dos, no las dos primeras del
      * paquete con las siete últimas detrás (que es lo que haría `array_replace_recursive`),
      * ni un tramo de `business_hours` mezclado índice a índice con otro.
@@ -47,9 +46,9 @@ class KoreCalendarServiceProvider extends ServiceProvider
      * cualquier otro caso lo publicado sustituye al valor entero: listas, escalares,
      * `null` y, por ejemplo, un `business_hours` que por defecto es `false`.
      *
-     * Un bloque publicado vacío (`'translations' => []`) cuenta como «sin cambios»: lo
-     * natural al dejar el esqueleto de un bloque sin rellenar, y vaciarlo dejaría la
-     * interfaz sin un solo texto.
+     * Un bloque publicado vacío (`'formats' => []`) cuenta como «sin cambios»: lo
+     * natural al dejar el esqueleto de un bloque sin rellenar, y vaciarlo dejaría el
+     * calendario sin un solo formato de fecha.
      *
      * @param  array<array-key, mixed>  $defaults
      * @param  array<array-key, mixed>  $published
@@ -92,6 +91,10 @@ class KoreCalendarServiceProvider extends ServiceProvider
         // busca antes en `resources/views/vendor/kore-calendar` (si existe al arrancar).
         $this->loadViewsFrom(__DIR__.'/../resources/views', 'kore-calendar');
 
+        // Los textos de interfaz: `lang/{en,es}/calendar.php`, como `kore-calendar::calendar.*`.
+        // Una aplicación los sobrescribe en `lang/vendor/kore-calendar/` o con `translations` del config.
+        $this->loadTranslationsFrom(__DIR__.'/../lang', 'kore-calendar');
+
         // El formulario de evento es un overlay de kore-ui: lo abre el calendario
         // con `kore:open` por este nombre, y el OverlayManager lo resuelve con él.
         Livewire::component('kore-calendar-event-form', EventForm::class);
@@ -127,6 +130,11 @@ class KoreCalendarServiceProvider extends ServiceProvider
             $this->publishes([
                 __DIR__.'/../resources/views' => resource_path('views/vendor/kore-calendar'),
             ], 'kore-calendar-views');
+
+            // Los textos de serie, para editarlos: `loadTranslationsFrom` busca antes en lang/vendor/kore-calendar.
+            $this->publishes([
+                __DIR__.'/../lang' => $this->app->langPath('vendor/kore-calendar'),
+            ], 'kore-calendar-lang');
         }
     }
 

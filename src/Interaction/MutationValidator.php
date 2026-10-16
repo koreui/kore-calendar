@@ -55,11 +55,11 @@ final class MutationValidator
     public function validateMove(EventMutation $mutation, iterable $instances): ?string
     {
         if (! Editability::canMove($mutation->event, $this->settings)) {
-            return Messages::get('not_editable');
+            return $this->text('not_editable');
         }
 
         if ($mutation->isResourceChange() && ! Editability::canChangeResource($mutation->event, $this->settings)) {
-            return Messages::get('resource_locked');
+            return $this->text('resource_locked');
         }
 
         return $this->rangeError($mutation) ?? $this->hoursError($mutation) ?? $this->overlapError($mutation, $instances);
@@ -71,7 +71,7 @@ final class MutationValidator
     public function validateResize(EventMutation $mutation, iterable $instances): ?string
     {
         if (! Editability::canResize($mutation->event, $this->settings)) {
-            return Messages::get('not_editable');
+            return $this->text('not_editable');
         }
 
         return $this->rangeError($mutation) ?? $this->hoursError($mutation) ?? $this->overlapError($mutation, $instances);
@@ -115,13 +115,13 @@ final class MutationValidator
     private function withinRange(int $start, int $end): ?string
     {
         if (! Bounds::contains($start, $end)) {
-            return Messages::get('out_of_range');
+            return $this->text('out_of_range');
         }
 
         $valid = $this->settings->validRange;
 
         if ($valid !== null && ! $valid->containsRange(new DateRange(Marker::fromTimestamp($start), Marker::fromTimestamp($end)))) {
-            return Messages::get('out_of_range');
+            return $this->text('out_of_range');
         }
 
         return null;
@@ -166,7 +166,7 @@ final class MutationValidator
                 continue;
             }
 
-            return Messages::get('overlap_rejected', ['title' => $event->title]);
+            return $this->text('overlap_rejected', ['title' => $event->title]);
         }
 
         return null;
@@ -201,7 +201,7 @@ final class MutationValidator
             $exact = ! $selection->allDay;
 
             if (Collision::intersects($selection->startMarker, $selection->endMarker, $exact ? $selection->start : null, $exact ? $selection->end : null, $other)) {
-                return Messages::get('overlap_rejected', ['title' => $other->event->title]);
+                return $this->text('overlap_rejected', ['title' => $other->event->title]);
             }
         }
 
@@ -246,11 +246,17 @@ final class MutationValidator
             }
 
             return $resource === null
-                ? Messages::get('outside_business_hours')
-                : Messages::get('outside_business_hours_resource', ['resource' => $resource->title]);
+                ? $this->text('outside_business_hours')
+                : $this->text('outside_business_hours_resource', ['resource' => $resource->title]);
         }
 
         return null;
+    }
+
+    /** El motivo en el idioma del calendario. */
+    private function text(string $key, array $replace = []): string
+    {
+        return Messages::get($key, $replace, $this->settings->locale);
     }
 
     /** Semiabierto y con instantes exactos cuando los hay: ver `Collision::intersects()`. */

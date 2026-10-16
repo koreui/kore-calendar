@@ -49,10 +49,13 @@ it('las columnas por recurso llevan el título del recurso en la cabecera', func
 });
 
 it('la agenda vacía lo anuncia con role=status', function () use ($render) {
+    app()->setLocale('es');
+
     expect($render('list'))->toContain('role="status"')->toContain('No hay eventos');
 });
 
 it('el "+N más" abre un diálogo con los eventos de la celda', function () {
+    app()->setLocale('es');
     config(['kore-calendar.month.max_events' => 1]);
     $calendar = CalendarRenderer::render(CalendarSettings::make(['date' => '2026-10-16', 'timezone' => 'UTC']), [
         ['id' => 1, 'title' => 'Uno', 'start' => '2026-10-14'],

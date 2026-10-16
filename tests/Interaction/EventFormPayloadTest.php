@@ -3,6 +3,7 @@
 use Carbon\CarbonImmutable;
 use KoreUi\Calendar\Events\CalendarEvent;
 use KoreUi\Calendar\Interaction\EventFormPayload;
+use KoreUi\Calendar\Interaction\Messages;
 use KoreUi\Calendar\Resources\ResourceSet;
 
 require_once __DIR__.'/helpers.php';
@@ -86,7 +87,10 @@ it('el color vacío es ninguno, uno de la lista vale y uno suyo solo si ya lo te
 
 it('la lista de colores y sus nombres traducidos coinciden', function () {
     foreach (EventFormPayload::COLORS as $token => $clave) {
-        expect(config("kore-calendar.translations.{$clave}"))->toBeString()->not->toBeEmpty("falta la traducción {$clave} del color {$token}");
+        foreach (['es', 'en'] as $idioma) {
+            // Una clave que falta sale con su nombre.
+            expect(Messages::get($clave, [], $idioma))->not->toBe($clave, "falta la traducción {$clave} del color {$token} en {$idioma}");
+        }
     }
 
     expect(array_keys(EventFormPayload::COLORS))->toBe([

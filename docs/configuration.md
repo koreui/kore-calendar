@@ -1,6 +1,6 @@
 # Configuración
 
-Referencia de todo lo que se puede configurar en kore-ui/calendar: las claves de `config/kore-calendar.php`, los métodos de `configure()` que las cambian en un calendario concreto, las props de `<x-kore::calendar>` y los textos de la interfaz.
+Referencia de todo lo que se puede configurar en kore-ui/calendar: las claves de `config/kore-calendar.php`, los métodos de `configure()` que las cambian en un calendario concreto, las props de `<x-kore::calendar>` y los textos de la interfaz, en inglés o en español.
 
 Documentación: [Calendar](getting-started.md) · [KoreCalendar](kore-calendar.md) · **Configuración** · [Theming](theming.md) · [Accesibilidad](accessibility.md) · [iCalendar](ical.md)
 
@@ -17,9 +17,10 @@ Un `null` cuenta como «no indicado»: `->maxEvents(null)` o `:max-events="null"
 ```bash
 php artisan vendor:publish --tag=kore-calendar-config   # config/kore-calendar.php
 php artisan vendor:publish --tag=kore-calendar-views    # resources/views/vendor/kore-calendar
+php artisan vendor:publish --tag=kore-calendar-lang     # lang/vendor/kore-calendar (los textos, en/es)
 ```
 
-- **El config publicado se funde con el del paquete a cualquier profundidad.** Basta con dejar en tu `config/kore-calendar.php` lo que cambias: un `translations` con una sola traducción conserva las demás, y un `time`, `formats`, `interaction`, `timeline.slots` o `interaction.valid_range` a medias conserva el resto de sus claves. Las **listas** no se funden, se sustituyen enteras: un `views` de dos vistas ofrece esas dos (no las dos primeras del paquete con las demás detrás), y lo mismo `hidden_days` o una lista de tramos de `business_hours`. Un bloque publicado vacío (`'translations' => []`) cuenta como «sin cambios». Con el config en caché (`config:cache`) no se vuelve a fundir: el caché ya trae el resultado, así que tras actualizar el paquete vuelve a ejecutar `php artisan config:cache`. Al actualizar, revisa el `CHANGELOG` por claves nuevas.
+- **El config publicado se funde con el del paquete a cualquier profundidad.** Basta con dejar en tu `config/kore-calendar.php` lo que cambias: un `time`, `formats`, `interaction`, `timeline.slots` o `interaction.valid_range` a medias conserva el resto de sus claves. Las **listas** no se funden, se sustituyen enteras: un `views` de dos vistas ofrece esas dos (no las dos primeras del paquete con las demás detrás), y lo mismo `hidden_days` o una lista de tramos de `business_hours`. Un bloque publicado vacío (`'formats' => []`) cuenta como «sin cambios». Con el config en caché (`config:cache`) no se vuelve a fundir: el caché ya trae el resultado, así que tras actualizar el paquete vuelve a ejecutar `php artisan config:cache`. Al actualizar, revisa el `CHANGELOG` por claves nuevas.
 - **Las vistas publicadas ganan a las del paquete.** El tag `kore-calendar-views` deja dos carpetas en `resources/views/vendor/kore-calendar`, y las dos se leen: `components/calendar/*` (los `<x-kore::calendar.*>`: mes, rejilla horaria, timeline, evento, barra…) y `livewire/*` (`calendar`, `event-form`, `recurrence-scope`). Publica solo lo que vayas a cambiar y borra del resto las copias: una vista publicada no se actualiza con el paquete.
 - **Dos formas de cambiar un calendario.** En `<x-kore::calendar>` solo hay las props de [la tabla de props](#props-de-x-korecalendar); en `KoreCalendar`, `configure()` con los métodos de [la tabla de métodos](#métodos-de-configure) y `set()` para cualquier otra clave. El resto de claves del config son globales de toda la aplicación.
 
@@ -31,6 +32,8 @@ Las claves anidadas se escriben con puntos (`time.slot_duration`), igual que en 
 
 | Clave | Tipo | Default | Qué hace |
 |---|---|---|---|
+| `locale` | `?string` | `null` | Idioma de los textos **y** de las fechas: `en` o `es` (una variante como `es_MX` o `en_GB` cuenta como su idioma base). `null` = `app()->getLocale()`. Ver [Idioma](#idioma-y-traducciones) |
+| `fallback_locale` | `string` | `'en'` | Idioma que se usa cuando el pedido no es `en` ni `es` (una aplicación en francés, por ejemplo) |
 | `default_view` | `string` | `'month'` | Vista inicial de `KoreCalendar` y de `<x-kore::calendar>` cuando la URL no trae `?view=` (o no es una de las disponibles) ni la etiqueta una `view`. Si ella tampoco está disponible (no está en `views`, o es de recursos y no hay recursos), la primera de `views`: ver la nota debajo |
 | `views` | `list<string>` | las nueve | Vistas del selector y únicas que acepta `?view=`. Posibles: `month`, `week`, `day`, `list`, `resource-week`, `resource-day`, `timeline-day`, `timeline-week`, `timeline-month`. Las cinco últimas solo se ofrecen si el calendario tiene recursos |
 | `timezone` | `?string` | `null` | Zona de la vista. `null` = `config('app.timezone')` (o `UTC` si no hay) |
@@ -42,8 +45,6 @@ Las claves anidadas se escriben con puntos (`time.slot_duration`), igual que en 
 | `now_indicator` | `bool` | `true` | Línea de «ahora» en la rejilla horaria y el timeline |
 | `business_hours` | `bool\|array` | `false` | Horario laboral que se pinta y que pueden exigir `event_constraint` y `select_constraint`. `true` = lunes a viernes de 09:00 a 17:00; un tramo o una lista de tramos `['daysOfWeek' => [1, 2], 'startTime' => '08:00', 'endTime' => '14:00']` (`endTime` hasta `48:00`). Ver [Horario laboral](getting-started.md#horario-laboral-y-disponibilidad) |
 | `highlight_conflicts` | `bool` | `false` | Marca con icono, borde y texto para lectores de pantalla los eventos que se solapan en el mismo recurso |
-
-`locale` no está en la plantilla del config, pero se lee: si añades `'locale' => 'es'` se usa como idioma de las fechas en lugar de `app()->getLocale()`.
 
 > **Qué vista se abre.** `KoreCalendar` y `<x-kore::calendar>` resuelven la vista inicial con la misma cadena y se quedan con el primer eslabón que el calendario ofrece: `?view=` de la URL (en el componente, solo si la barra está activa; en `KoreCalendar`, también lo que dejó `changeView()`), la prop `view` (solo el componente), `default_view` y, por último, la primera de `views`. Un eslabón que no está en `views` (o es de recursos sin recursos) se salta, no se pinta a la fuerza: una `default_view` fuera de `views` equivale a no haberla puesto.
 
@@ -113,7 +114,7 @@ Todo apagado por defecto: un calendario es de solo lectura hasta que su clase lo
 
 ### `formats`
 
-Patrones de `isoFormat` de Carbon, que se adaptan al idioma sin `ext-intl`: `LL` es «16 de octubre de 2026» o «October 16, 2026», `LT` la hora del locale.
+Patrones de `isoFormat` de Carbon, que se adaptan al idioma del calendario (`locale`) sin `ext-intl`: `LL` es «16 de octubre de 2026» o «October 16, 2026», `LT` la hora del idioma («14:30» o «2:30 PM»).
 
 | Clave | Default | Dónde se usa |
 |---|---|---|
@@ -149,7 +150,7 @@ public function configure(): void
 | `views(array)` | `views` | Solo para este calendario |
 | `defaultView(string)` | `default_view` | |
 | `timezone(string)` | `timezone` | |
-| `locale(string)` | `locale` | |
+| `locale(string)` | `locale` | `'en'` o `'es'`. Cambia los textos y las fechas de este calendario |
 | `firstDay(int)` | `first_day` | |
 | `hiddenDays(array)` | `hidden_days` | |
 | `weekNumbers('iso'\|'locale'\|false = 'iso')` | `week_numbers` | |
@@ -189,7 +190,7 @@ Las props llevan el nombre de la clave del config (en kebab-case) y ganan sobre 
 | `date` | `string\|DateTimeInterface\|Marker` | hoy | Fecha que se muestra. `?date=YYYY-MM-DD` la sustituye |
 | `views` | `array` | config `views` | Vistas del selector |
 | `timezone` | `string` | config `timezone` | Zona de la vista |
-| `locale` | `string` | `app()->getLocale()` | Idioma de las fechas |
+| `locale` | `string` | config `locale`, o `app()->getLocale()` | Idioma de los textos y las fechas (`en` o `es`) |
 | `first-day` | `int` | config `first_day` | Primer día de la semana |
 | `hidden-days` | `array` | config `hidden_days` | Días ocultos |
 | `week-numbers` | `false\|'iso'\|'locale'` | config `week_numbers` | Números de semana en el mes |
@@ -208,13 +209,35 @@ Las props llevan el nombre de la clave del config (en kebab-case) y ganan sobre 
 
 El resto de atributos (`class`, `id`, `data-*`) van al `div` que envuelve la barra y la vista.
 
-## Traducciones
+## Idioma y traducciones
 
-Los textos de la interfaz están en `kore-calendar.translations`; no hay archivos `lang/`. Ninguna vista lleva un texto escrito a mano. Basta con publicar el config y dejar en `translations` los textos que cambias: el resto sale del paquete (ver [Cómo se resuelve un valor](#cómo-se-resuelve-un-valor)). Una clave que no existe en ningún sitio, por ejemplo la de una vista que añadas (`view_*`), se muestra con su nombre.
+El calendario habla **inglés o español**, y los textos y las fechas siempre en el mismo: nunca sale una fecha en inglés con los botones en español. El idioma se resuelve en este orden:
 
-Los marcadores `:nombre` se sustituyen por texto plano al mostrarse. En la tabla, la columna **Marcadores** dice cuáles lleva cada texto; las claves sin marcadores no los admiten.
+1. El del calendario: `->locale('en')` en `configure()` o la prop `locale` de `<x-kore::calendar>`.
+2. `kore-calendar.locale` del config.
+3. El de la aplicación (`app()->getLocale()`).
 
-Las fechas de los textos (`:date`) y de la interfaz salen con `locale`, no con estas claves.
+De lo que salga solo cuenta el idioma base (`es_MX`, `es-AR` → `es`; `en_GB` → `en`). Si no es `en` ni `es`, se usa `kore-calendar.fallback_locale` (`'en'` por defecto): una aplicación en francés ve el calendario en inglés, con las fechas en inglés. La primera semana del año y el orden alfabético sí usan el idioma pedido tal cual (`en_GB` numera las semanas como ISO).
+
+Los textos viven en `lang/en/calendar.php` y `lang/es/calendar.php` del paquete (namespace `kore-calendar`). Ninguna vista lleva un texto escrito a mano. Tres formas de cambiarlos, de menos a más fuerte:
+
+- **Editar los de serie**: `php artisan vendor:publish --tag=kore-calendar-lang` copia `lang/` a `lang/vendor/kore-calendar/`. Laravel lee primero esa copia, y basta con dejar las claves que cambias.
+- **`translations` del config**: una lista de *overrides*, vacía por defecto. Una clave puesta aquí gana a la del archivo de idioma.
+- **Por idioma**: dentro de `translations`, una clave cuyo valor es un array (`'en'`, `'es'`) solo vale en ese idioma y gana a la general.
+
+```php
+// config/kore-calendar.php
+'translations' => [
+    'today' => 'Ahora',                  // en los dos idiomas
+    'en' => ['today' => 'Right now'],    // solo en inglés; gana a la anterior
+],
+```
+
+El idioma del calendario viaja con el formulario de evento y el diálogo de alcance (son overlays aparte), con los textos de teclado que recibe el JavaScript y con el formateo de fechas de los anuncios, así que todo sale en el mismo idioma. Una clave que no existe en ningún sitio, por ejemplo la de una vista que añadas (`view_*`), se muestra con su nombre.
+
+> **Componentes de kore-ui.** El formulario usa los selectores de fecha, hora y lista de kore-ui, y los avisos son toasts suyos. Sus textos fijos («Elegir fecha», «Mes anterior», «Limpiar», «Cerrar notificación»…) salen de `kore-ui.form.translations.*` y `kore-ui.ui.translations.*`, que el calendario no controla: en una aplicación en inglés, tradúcelos en la configuración de kore-ui. Los nombres de los meses y los días del selector de fecha sí siguen al idioma del calendario.
+
+Los marcadores `:nombre` se sustituyen por texto plano al mostrarse. En las tablas, la columna **Marcadores** dice cuáles lleva cada texto; las claves sin marcadores no los admiten. Las tablas muestran el texto español; el inglés está en `lang/en/calendar.php`.
 
 ### Vista y barra
 
@@ -253,6 +276,7 @@ Salen como motivo en un toast de error y como anuncio. `move_rejected` y `resize
 | `overlap_rejected` | `:title` (el evento con el que choca) |
 | `outside_business_hours_resource` | `:resource` (título del recurso) |
 | `event_not_found`, `resource_not_found`, `invalid_duration`, `invalid_change`, `persist_failed` | |
+| `hook_missing` | `:hook` (`persistMove`, `createEvent`…), `:class` | Motivo del rechazo cuando el calendario es editable y no implementa ese hook |
 
 ### Anuncios y conflictos
 
@@ -261,7 +285,8 @@ Salen como motivo en un toast de error y como anuncio. `move_rejected` y `resize
 | `event_moved` | `:title`, `:date` | Anuncio `aria-live` al mover (««Reunión» movido al …») |
 | `event_resized` | `:title`, `:date` | Al cambiar el fin. También se anuncia así cada pulsación de Mayúsculas + flecha al redimensionar con el teclado |
 | `event_resized_start` | `:title`, `:date` | Al cambiar el inicio |
-| `conflict` | `:with` | Texto para lectores de pantalla de un evento en conflicto: los títulos de los otros, entre «» y separados por comas |
+| `conflict` | `:with` | Texto para lectores de pantalla de un evento en conflicto: los títulos de los otros, entre las comillas del idioma (`event_quoted`) y separados por comas |
+| `event_quoted` | `:title` | Un título entre comillas dentro de una lista: «Reunión» en español, “Reunión” en inglés |
 
 ### Deshacer
 

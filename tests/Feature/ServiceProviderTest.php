@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use KoreUi\Calendar\Interaction\Messages;
 use KoreUi\Calendar\KoreCalendarServiceProvider;
 
 it('fusiona su configuración bajo kore-calendar', function () {
@@ -105,12 +106,18 @@ function registrarConfig(array $publicada): void
     (new KoreCalendarServiceProvider(app()))->register();
 }
 
-it('una traducción publicada suelta conserva las demás', function () {
+it('`translations` viene vacío: los textos de serie están en lang/, no en el config', function () {
+    expect(config('kore-calendar.translations'))->toBe([])
+        ->and(config('kore-calendar.locale'))->toBeNull()
+        ->and(config('kore-calendar.fallback_locale'))->toBe('en');
+});
+
+it('un override publicado suelto cambia solo esa traducción y deja las del archivo de idioma', function () {
     registrarConfig(['translations' => ['today' => 'Ahora']]);
 
-    expect(config('kore-calendar.translations.today'))->toBe('Ahora')
-        ->and(config('kore-calendar.translations.next'))->toBe('Siguiente')
-        ->and(config('kore-calendar.translations.form_save'))->toBe('Guardar');
+    expect(Messages::get('today', [], 'es'))->toBe('Ahora')
+        ->and(Messages::get('next', [], 'es'))->toBe('Siguiente')
+        ->and(Messages::get('form_save', [], 'es'))->toBe('Guardar');
 });
 
 it('un bloque publicado a medias conserva el resto de sus claves', function () {
@@ -167,10 +174,20 @@ it('un horario laboral de un solo tramo (asociativo) sustituye a `false`, no se 
 });
 
 it('un bloque publicado vacío no borra los ajustes del paquete', function () {
-    registrarConfig(['translations' => [], 'interaction' => []]);
+    registrarConfig(['formats' => [], 'interaction' => []]);
 
-    expect(config('kore-calendar.translations.next'))->toBe('Siguiente')
+    expect(config('kore-calendar.formats.title_month'))->toBe('MMMM YYYY')
         ->and(config('kore-calendar.interaction.editable'))->toBeFalse();
+});
+
+it('el tag kore-calendar-lang publica lang/ en lang/vendor/kore-calendar, donde loadTranslationsFrom busca primero', function () {
+    $publicado = Illuminate\Support\ServiceProvider::pathsToPublish(KoreCalendarServiceProvider::class, 'kore-calendar-lang');
+
+    expect($publicado)->toHaveCount(1)
+        ->and(array_values($publicado)[0])->toBe(app()->langPath('vendor/kore-calendar'))
+        ->and(array_map('basename', glob(array_keys($publicado)[0].'/*', GLOB_ONLYDIR)))->toEqualCanonicalizing(['en', 'es'])
+        // Y el paquete las lee como `kore-calendar::calendar.*`.
+        ->and(trans('kore-calendar::calendar.today', [], 'en'))->toBe('Today');
 });
 
 it('sin configuración publicada quedan los valores del paquete', function () {

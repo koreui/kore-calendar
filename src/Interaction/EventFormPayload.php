@@ -57,7 +57,7 @@ final class EventFormPayload
      */
     public static function check(array $raw, CalendarSettings $settings, ResourceSet $resources, ?CalendarEvent $original = null): array|string
     {
-        $invalid = Messages::get('invalid_change');
+        $invalid = Messages::get('invalid_change', [], $settings->locale);
 
         $title = $raw['title'] ?? null;
         $allDay = $raw['allDay'] ?? null;
@@ -93,7 +93,7 @@ final class EventFormPayload
             $resource = $resources->find($resourceId);
 
             if ($resource === null) {
-                return Messages::get('resource_not_found');
+                return Messages::get('resource_not_found', [], $settings->locale);
             }
         }
 

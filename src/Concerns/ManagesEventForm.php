@@ -6,7 +6,6 @@ use KoreUi\Calendar\Events\CalendarEvent;
 use KoreUi\Calendar\Events\EventInstance;
 use KoreUi\Calendar\Events\EventNormalizer;
 use KoreUi\Calendar\Interaction\EventFormPayload;
-use KoreUi\Calendar\Interaction\Messages;
 use KoreUi\Calendar\Interaction\Selection;
 use KoreUi\Calendar\Overlays\EventForm;
 use KoreUi\Calendar\Time\Marker;
@@ -59,7 +58,7 @@ trait ManagesEventForm
         if ($original === null) {
             // Borrado en otra pestaña, de otra semana o ajeno: se avisa y se repinta,
             // que es lo que hace desaparecer el evento de la pantalla.
-            $this->toast()->error(Messages::get('event_not_found'))->send();
+            $this->toast()->error($this->koreText('event_not_found'))->send();
 
             return;
         }
@@ -96,7 +95,7 @@ trait ManagesEventForm
 
         match ($mode) {
             'create', 'edit', 'delete' => $this->koreSaveEvent($mode, $data),
-            default => $this->koreReject('update_rejected', Messages::get('invalid_change')),
+            default => $this->koreReject('update_rejected', $this->koreText('invalid_change')),
         };
     }
 
@@ -123,7 +122,7 @@ trait ManagesEventForm
             $instance = is_string($id) || is_int($id) ? self::koreFind($this->koreInstances($settings), $id) : null;
 
             if ($instance === null) {
-                $this->koreReject($rejected, Messages::get('event_not_found'), stale: true);
+                $this->koreReject($rejected, $this->koreText('event_not_found'), stale: true);
 
                 return;
             }
@@ -131,7 +130,7 @@ trait ManagesEventForm
             // Un evento marcado `editable: false` (un festivo, una reserva de otro sistema) no se
             // cambia desde el formulario aunque el calendario sea editable.
             if ($instance->event->editable === false) {
-                $this->koreReject($rejected, Messages::get('not_editable'));
+                $this->koreReject($rejected, $this->koreText('not_editable'));
 
                 return;
             }
@@ -197,7 +196,7 @@ trait ManagesEventForm
 
         $done = ['create' => 'event_created', 'edit' => 'event_updated', 'delete' => 'event_deleted'][$mode];
 
-        $this->toast()->success(Messages::get($done, ['title' => $clean['title'] ?? $original->title]))->send();
+        $this->toast()->success($this->koreText($done, ['title' => $clean['title'] ?? $original->title]))->send();
 
         // El formulario de una ocurrencia no se cierra solo: espera al diálogo de alcance. Si
         // el evento ya no era una serie cuando llegó el aviso, no habrá diálogo que lo cierre.
@@ -275,7 +274,7 @@ trait ManagesEventForm
                 ),
             ],
             // El nombre accesible del diálogo (`role="dialog"`): lo sabe quien lo abre.
-            overlayAttributes: ['title' => Messages::get($mode === 'edit' ? 'form_edit' : 'form_create')],
+            overlayAttributes: ['title' => $this->koreText($mode === 'edit' ? 'form_edit' : 'form_create')],
         );
 
         // Abrir un overlay no cambia nada de lo que el calendario dibuja.

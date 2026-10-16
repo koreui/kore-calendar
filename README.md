@@ -5,6 +5,7 @@ Calendario de eventos y recursos para Laravel + Livewire 4, construido sobre [ko
 - El layout se calcula en PHP y se pinta en Blade. Alpine solo previsualiza los gestos; lo que manda el navegador se vuelve a validar en el servidor.
 - Sin dependencias JavaScript de terceros: el bundle propio pesa menos de 5 kB gzip.
 - Temas con los tokens `--kore-*` de kore-ui, dark mode incluido.
+- English and Spanish: textos y fechas en el idioma de la aplicación (o el que configures), con `lang/` publicable. Ver [Idioma y traducciones](docs/configuration.md#idioma-y-traducciones).
 - Se usa de dos formas: el componente `<x-kore::calendar>` en cualquier página Blade (solo lectura, navegación con enlaces) o la clase base `KoreCalendar`, un componente Livewire con estado, edición y eventos desde tu base de datos.
 
 > **Estado:** pre-release (`0.x`, sin versión publicada). La API puede cambiar hasta la primera release; los cambios están en [CHANGELOG.md](CHANGELOG.md).

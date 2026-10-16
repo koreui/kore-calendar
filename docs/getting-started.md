@@ -50,7 +50,7 @@ Los eventos pueden ser arrays, `CalendarEvent` o fuentes (`EventSource`: `Eloque
 | `date` | `string\|DateTime` | hoy | Fecha que se muestra. `?date=YYYY-MM-DD` la sustituye |
 | `views` | `array` | `config(views)` | Vistas del selector |
 | `timezone` | `string` | `app.timezone` | Zona de la vista |
-| `locale` | `string` | `app()->getLocale()` | Idioma de fechas |
+| `locale` | `string` | `app()->getLocale()` | Idioma de los textos y las fechas (`en` o `es`) |
 | `first-day` | `int` | datepicker de kore-ui | 0 = domingo |
 | `hidden-days` | `array` | `[]` | Días ocultos (`[0, 6]` = laborables) |
 | `week-numbers` | `false\|'iso'\|'locale'` | `false` | Números de semana en la vista mes |
@@ -184,9 +184,9 @@ Las restricciones (que un evento movido o una selección deban quedar en horario
 
 ## Configuración
 
-`php artisan vendor:publish --tag=kore-calendar-config` publica `config/kore-calendar.php`: vista por defecto, zona, primer día, rejilla horaria, límites del mes, orden de eventos (`event_order`, el mismo formato que FullCalendar), formatos de fecha (`isoFormat` de Carbon) y textos de interfaz (`translations`). Todas las claves, los métodos de `configure()` y las props equivalentes: [Configuración](configuration.md). Los colores y tamaños: [Theming](theming.md).
+`php artisan vendor:publish --tag=kore-calendar-config` publica `config/kore-calendar.php`: vista por defecto, zona, primer día, rejilla horaria, límites del mes, orden de eventos (`event_order`, el mismo formato que FullCalendar), formatos de fecha (`isoFormat` de Carbon), idioma (`locale`) y los textos de interfaz que cambias (`translations`; los de serie están en `lang/{en,es}`). Todas las claves, los métodos de `configure()` y las props equivalentes: [Configuración](configuration.md). Los colores y tamaños: [Theming](theming.md).
 
-Al publicar el config puedes dejar solo lo que cambias: los bloques se funden con los del paquete a cualquier profundidad (una traducción suelta conserva las demás) y las listas (`views`, `hidden_days`, los tramos de `business_hours`) se sustituyen enteras. `php artisan vendor:publish --tag=kore-calendar-views` copia las vistas a `resources/views/vendor/kore-calendar`, y las copias ganan a las del paquete (ver [Configuración](configuration.md#cómo-se-resuelve-un-valor)).
+Al publicar el config puedes dejar solo lo que cambias: los bloques se funden con los del paquete a cualquier profundidad (un `formats` con un solo formato conserva los demás) y las listas (`views`, `hidden_days`, los tramos de `business_hours`) se sustituyen enteras. `php artisan vendor:publish --tag=kore-calendar-views` copia las vistas a `resources/views/vendor/kore-calendar`, y las copias ganan a las del paquete (ver [Configuración](configuration.md#cómo-se-resuelve-un-valor)).
 
 ## Accesibilidad
 

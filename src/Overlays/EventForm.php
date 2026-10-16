@@ -5,6 +5,7 @@ namespace KoreUi\Calendar\Overlays;
 use Illuminate\Validation\Rule;
 use KoreUi\Calendar\Interaction\EventFormPayload;
 use KoreUi\Calendar\Interaction\Messages;
+use KoreUi\Calendar\Support\Locale;
 use KoreUi\Calendar\Time\Marker;
 use KoreUi\Core\Concerns\InteractsWithFeedback;
 use KoreUi\Overlay\OverlayComponent;
@@ -139,7 +140,7 @@ class EventForm extends OverlayComponent
         $this->resourceId = $resourceId === null ? null : (string) $resourceId;
         $this->color = $color === '' ? null : $color;
         $this->originalColor = $this->color;
-        $this->calendarLocale = $locale ?? app()->getLocale();
+        $this->calendarLocale = Locale::resolve($locale);
         $this->weekStart = $firstDay;
 
         [$this->startDate, $this->startTime] = self::split($start);
@@ -188,7 +189,7 @@ class EventForm extends OverlayComponent
         $this->validate();
 
         if (($conflict = $this->endBeforeStart()) !== null) {
-            $this->addError($conflict, Messages::get('form_end_before_start'));
+            $this->addError($conflict, $this->koreText('form_end_before_start'));
 
             return;
         }
@@ -219,11 +220,11 @@ class EventForm extends OverlayComponent
             return;
         }
 
-        $this->confirm(Messages::get('form_delete_confirm', ['title' => $this->eventTitle]))
-            ->description(Messages::get('form_delete_description'))
+        $this->confirm($this->koreText('form_delete_confirm', ['title' => $this->eventTitle]))
+            ->description($this->koreText('form_delete_description'))
             ->type('warning')
-            ->confirmText(Messages::get('form_delete'))
-            ->cancelText(Messages::get('form_cancel'))
+            ->confirmText($this->koreText('form_delete'))
+            ->cancelText($this->koreText('form_cancel'))
             ->onConfirm('confirmDelete')
             ->send();
     }
@@ -273,20 +274,20 @@ class EventForm extends OverlayComponent
     }
 
     /**
-     * Mensajes por regla y no por campo: son tres y valen para todos. Los de
-     * Laravel salen de los `lang/` de la aplicación y no de `translations`.
+     * Mensajes por regla y no por campo: son tres y valen para todos. Los de Laravel
+     * salen de los `lang/` de la aplicación y no de los del paquete.
      *
      * @return array<string, string>
      */
     protected function messages(): array
     {
         return [
-            'required' => Messages::get('form_required'),
-            'required_with' => Messages::get('form_required'),
-            'string' => Messages::get('form_invalid'),
-            'max' => Messages::get('form_invalid'),
-            'date_format' => Messages::get('form_invalid'),
-            'in' => Messages::get('form_invalid'),
+            'required' => $this->koreText('form_required'),
+            'required_with' => $this->koreText('form_required'),
+            'string' => $this->koreText('form_invalid'),
+            'max' => $this->koreText('form_invalid'),
+            'date_format' => $this->koreText('form_invalid'),
+            'in' => $this->koreText('form_invalid'),
         ];
     }
 
@@ -361,6 +362,12 @@ class EventForm extends OverlayComponent
         return $value !== null && trim($value) !== '';
     }
 
+    /** Un texto de interfaz en el idioma del calendario que abrió el formulario. */
+    protected function koreText(string $key, array $replace = []): string
+    {
+        return Messages::get($key, $replace, $this->calendarLocale);
+    }
+
     // ── Render ──────────────────────────────────────────────────────────
 
     public function render()
@@ -368,7 +375,7 @@ class EventForm extends OverlayComponent
         $colors = [];
 
         foreach (EventFormPayload::COLORS as $token => $key) {
-            $colors[] = ['value' => $token, 'label' => Messages::get($key)];
+            $colors[] = ['value' => $token, 'label' => $this->koreText($key)];
         }
 
         // Su color, si no es de la lista: sin esta opción el selector lo enseñaría vacío y guardar lo borraría.

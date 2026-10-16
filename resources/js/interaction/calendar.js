@@ -33,7 +33,7 @@ export default function KoreCalendarInteraction(config = {}) {
         snap: config.snap ?? 1800,
         selectable: config.selectable ?? false,
         defaultTimed: config.defaultTimed ?? 3600,
-        locale: config.locale ?? 'es',
+        locale: config.locale ?? 'en',
         texts: config.texts ?? {},
         // Marcar la previsualización fuera del horario laboral (data-business). Solo es una
         // pista: el servidor decide y vuelve a validar al soltar.
@@ -360,7 +360,7 @@ export default function KoreCalendarInteraction(config = {}) {
             const at = edge === 'end' ? (k.allDay ? k.end - DAY : k.end) : k.start;
             const when = fmt.format(new Date(at * 1000));
 
-            // Los textos llegan traducidos del servidor (translations.kbd_*, y event_resized como plantilla).
+            // Los textos llegan traducidos del servidor, en el idioma del calendario (kbd_*, y event_resized como plantilla).
             // Una sola pasada: un título con «:date» no se vuelve a sustituir dentro del texto ya insertado.
             const sentence = edge === 'end' && this.texts.resized
                 ? this.texts.resized.replace(/:(title|date)/g, (_, name) => (name === 'title' ? k.event.title : when))

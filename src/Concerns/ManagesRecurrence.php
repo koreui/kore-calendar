@@ -3,7 +3,6 @@
 namespace KoreUi\Calendar\Concerns;
 
 use KoreUi\Calendar\Events\EventInstance;
-use KoreUi\Calendar\Interaction\Messages;
 use KoreUi\Calendar\Overlays\RecurrenceScope;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\On;
@@ -57,9 +56,9 @@ trait ManagesRecurrence
 
         $this->dispatch('kore:open',
             name: 'kore-calendar-recurrence-scope',
-            arguments: ['calendar' => $this->getId(), 'action' => $action, 'title' => $instance->event->title],
+            arguments: ['calendar' => $this->getId(), 'action' => $action, 'title' => $instance->event->title, 'locale' => $this->koreLocale()],
             // El nombre accesible del diálogo (`role="dialog"`): lo sabe quien lo abre.
-            overlayAttributes: ['title' => Messages::get(RecurrenceScope::TITLES[$action])],
+            overlayAttributes: ['title' => $this->koreText(RecurrenceScope::TITLES[$action])],
         );
 
         $this->skipRender();

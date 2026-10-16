@@ -3,6 +3,7 @@
 namespace KoreUi\Calendar\View;
 
 use KoreUi\Calendar\Events\EventInstance;
+use KoreUi\Calendar\Interaction\Messages;
 use KoreUi\Calendar\Layout\ListLayout;
 use KoreUi\Calendar\Layout\MonthLayout;
 use KoreUi\Calendar\Layout\TimeGridLayout;
@@ -70,7 +71,7 @@ final class RenderedCalendar
             return null;
         }
 
-        $titles = array_unique(array_map(fn (EventInstance $other) => '«'.$other->event->title.'»', $others));
+        $titles = array_unique(array_map(fn (EventInstance $other) => $this->text('event_quoted', ['title' => $other->event->title]), $others));
 
         return $this->text('conflict', ['with' => implode(', ', $titles)]);
     }
@@ -103,14 +104,9 @@ final class RenderedCalendar
         };
     }
 
+    /** Un texto de interfaz en el idioma de este calendario (`Messages` lo resuelve, con los overrides del config). */
     public function text(string $key, array $replace = []): string
     {
-        $text = (string) config("kore-calendar.translations.{$key}", $key);
-
-        foreach ($replace as $name => $value) {
-            $text = str_replace(':'.$name, (string) $value, $text);
-        }
-
-        return $text;
+        return Messages::get($key, $replace, $this->settings->locale);
     }
 }

@@ -32,6 +32,9 @@ class RecurringCalendar extends KoreCalendar
 
     public static bool $undoable = false;
 
+    /** Ajustes extra con la forma del config ('locale' => 'en'). Ganan a configure(). */
+    public static array $config = [];
+
     /** @var list<array{0: CalendarEvent, 1: EventMutation}> */
     public static array $moved = [];
 
@@ -54,6 +57,7 @@ class RecurringCalendar extends KoreCalendar
         static::$rows = null;
         static::$store = false;
         static::$undoable = false;
+        static::$config = [];
         static::$moved = [];
         static::$resized = [];
         static::$updated = [];
@@ -83,6 +87,10 @@ class RecurringCalendar extends KoreCalendar
 
         if (static::$undoable) {
             $this->undoable();
+        }
+
+        foreach (static::$config as $key => $value) {
+            $this->set($key, $value);
         }
     }
 
