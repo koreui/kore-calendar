@@ -82,13 +82,14 @@ it('cada par sale una vez, ordenado por inicio, y los encadenados no se empareja
 
 it('un evento largo choca con uno corto que empieza mucho después de su inicio', function () {
     $pairs = ConflictFinder::find([
-        ixInstance(1, '2026-10-12', '2026-10-19'),
+        // Con hora y de varios días (un turno largo): el corte del bucle por inicio
+        // no debe dejar fuera a los que empiezan mucho después.
+        ixInstance(1, '2026-10-12 08:00', '2026-10-19 08:00'),
         ixInstance(2, '2026-10-13 10:00', '2026-10-13 11:00'),
         ixInstance(3, '2026-10-18 10:00', '2026-10-18 11:00'),
         ixInstance(4, '2026-10-20 10:00', '2026-10-20 11:00'),
     ]);
 
-    // Un día completo y uno con hora del mismo día se solapan (como en el validador).
     expect(cfIds($pairs))->toBe(['1+2', '1+3']);
 });
 
@@ -189,4 +190,35 @@ it('byInstance() da, desde cada evento, con quién choca', function () {
         ->and(array_map(fn ($i) => $i->event->id, $map[$a->instanceId]))->toBe([2, 3])
         ->and(array_map(fn ($i) => $i->event->id, $map[$c->instanceId]))->toBe([1, 2])
         ->and(isset($map[$solo->instanceId]))->toBeFalse();
+});
+
+
+// ── Regla de agenda: el día completo es contexto ───────────────────────
+
+it('un evento de día completo no choca con los de ese día ni con otro de día completo', function () {
+    $pairs = ConflictFinder::find([
+        ixInstance(1, '2026-10-12', '2026-10-17'),            // vacaciones
+        ixInstance(2, '2026-10-14', '2026-10-16'),            // congreso
+        ixInstance(3, '2026-10-13 10:00', '2026-10-13 11:00'),
+    ]);
+
+    expect($pairs)->toBe([]);
+});
+
+it('un día completo con overlap false sí choca con lo que se le pone encima', function () {
+    $pairs = ConflictFinder::find([
+        ixInstance(1, '2026-10-13', '2026-10-14', extra: ['overlap' => false]), // festivo
+        ixInstance(2, '2026-10-13 10:00', '2026-10-13 11:00'),
+    ]);
+
+    expect(cfIds($pairs))->toBe(['1+2']);
+});
+
+it('dos citas con hora sin recurso chocan, como en una agenda personal', function () {
+    $pairs = ConflictFinder::find([
+        ixInstance(1, '2026-10-13 10:00', '2026-10-13 11:00'),
+        ixInstance(2, '2026-10-13 10:30', '2026-10-13 11:30'),
+    ]);
+
+    expect(cfIds($pairs))->toBe(['1+2']);
 });

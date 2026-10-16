@@ -77,9 +77,25 @@ final class ConflictFinder
             return false;
         }
 
+        if (! Collision::overlap($a, $b)) {
+            return false;
+        }
+
+        // `overlap: false` choca con todo lo que comparte su carril, sea de día
+        // completo o con hora: es la forma de decir «aquí no se pone nada».
+        if (Collision::sharesLane($x->resourceIds, $y->resourceIds) && ($x->overlap === false || $y->overlap === false)) {
+            return Collision::conflict($x, $y, ! $overlapAllowed);
+        }
+
+        // Solape «de agenda»: mismo recurso, o los dos sin recurso. Un evento de día
+        // completo (vacaciones, un congreso) es contexto, no una cita: no choca con lo
+        // que pasa ese día. Sin esto, unas vacaciones marcaban en rojo media semana.
+        if ($a->allDay || $b->allDay) {
+            return false;
+        }
+
         return Collision::sharesLane($x->resourceIds, $y->resourceIds)
-            && Collision::conflict($x, $y, ! $overlapAllowed)
-            && Collision::overlap($a, $b);
+            && Collision::conflict($x, $y, ! $overlapAllowed);
     }
 
     /**
