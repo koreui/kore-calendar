@@ -52,6 +52,21 @@ final class CalendarViews
         return $available[0] ?? 'month';
     }
 
+    /**
+     * La vista para pantallas estrechas (`mobile_view`), o `null` si no hay ninguna que valga.
+     *
+     * Solo cuenta una vista que el calendario ofrece, igual que cada eslabón de `initial()`: un
+     * valor inventado, una vista de recursos sin recursos o una que no está en `views` se
+     * descartan en vez de mandar al cliente a una vista que el selector no tiene. El cliente solo
+     * la usa en la primera carga sin `?view=`.
+     *
+     * @param  list<string>  $available  Lo que devuelve `available()`.
+     */
+    public static function mobile(mixed $candidate, array $available): ?string
+    {
+        return is_string($candidate) && in_array($candidate, $available, true) ? $candidate : null;
+    }
+
     /** El componente Blade (bajo kore::calendar.) que pinta la vista. */
     public static function component(string $view): string
     {

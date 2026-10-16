@@ -5,10 +5,14 @@ namespace KoreUi\Calendar\Concerns;
 use KoreUi\Calendar\Events\CalendarEvent;
 use KoreUi\Calendar\Events\EventInstance;
 use KoreUi\Calendar\Events\EventNormalizer;
+use KoreUi\Calendar\Interaction\Editability;
 use KoreUi\Calendar\Interaction\EventFormPayload;
+use KoreUi\Calendar\Interaction\MutationBuilder;
+use KoreUi\Calendar\Interaction\MutationValidator;
 use KoreUi\Calendar\Interaction\Selection;
 use KoreUi\Calendar\Overlays\EventForm;
 use KoreUi\Calendar\Time\Marker;
+use KoreUi\Calendar\View\CalendarSettings;
 use Livewire\Attributes\On;
 
 /**
@@ -19,8 +23,13 @@ use Livewire\Attributes\On;
  * vista, los datos se vuelven a comprobar y solo entonces se llama al hook del
  * consumidor (`createEvent`, `updateEvent`, `deleteEvent`) dentro de una transacción.
  *
+ * Y con las mismas reglas de interacción (docs/calendar.md §11): el formulario no es un
+ * atajo para saltarse `editable`, `eventConstraint`, los solapes, `validRange` ni
+ * `selectable()`. Editar pasa por `MutationValidator::validateEdit()`, crear por las reglas
+ * de seleccionar y eliminar pide `editable`. Los motivos y su texto son los del arrastre.
+ *
  * Vive en un trait por tamaño: usa piezas de `KoreCalendar` (`koreFind`,
- * `koreInstances`, `korePersist`, `koreReject`) y los hooks públicos del consumidor
+ * `koreInstances`, `korePersist`, `koreReject`) y los hooks del consumidor
  * están declarados allí, junto a `persistMove()`.
  */
 trait ManagesEventForm
@@ -114,12 +123,14 @@ trait ManagesEventForm
         $rejected = ['create' => 'create_rejected', 'edit' => 'update_rejected', 'delete' => 'delete_rejected'][$mode];
         $original = null;
         $instance = null;
+        $instances = null;
 
         if ($mode !== 'create') {
             // Una ocurrencia se identifica por su `instanceId`: el id del evento es el de
             // la serie y `koreFind()` lo rechaza. Para un evento normal basta con el id.
             $id = $data['instanceId'] ?? $data['id'] ?? null;
-            $instance = is_string($id) || is_int($id) ? self::koreFind($this->koreInstances($settings), $id) : null;
+            $instances = $this->koreInstances($settings);
+            $instance = is_string($id) || is_int($id) ? self::koreFind($instances, $id) : null;
 
             if ($instance === null) {
                 $this->koreReject($rejected, $this->koreText('event_not_found'), stale: true);
@@ -128,8 +139,9 @@ trait ManagesEventForm
             }
 
             // Un evento marcado `editable: false` (un festivo, una reserva de otro sistema) no se
-            // cambia desde el formulario aunque el calendario sea editable.
-            if ($instance->event->editable === false) {
+            // cambia desde el formulario aunque el calendario sea editable. Eliminarlo, además,
+            // pide que el evento (o, si no dice nada, el calendario) sea `editable`.
+            if ($instance->event->editable === false || ($mode === 'delete' && ! Editability::canDelete($instance->event, $settings))) {
                 $this->koreReject($rejected, $this->koreText('not_editable'));
 
                 return;
@@ -145,6 +157,16 @@ trait ManagesEventForm
 
             if (is_string($clean)) {
                 $this->koreReject($rejected, $clean);
+
+                return;
+            }
+
+            // Lo mismo que se le exigiría a un arrastre. El formulario no es un camino
+            // alternativo para saltarse `editable`, el horario laboral ni los solapes.
+            $refusal = $this->koreFormRefusal($mode, $clean, $settings, $instance, $instances);
+
+            if ($refusal !== null) {
+                $this->koreReject($rejected, $refusal);
 
                 return;
             }
@@ -203,6 +225,40 @@ trait ManagesEventForm
         if ($scope === null && isset($data['instanceId'])) {
             $this->dispatch('kore:close', force: true);
         }
+    }
+
+    /**
+     * Las reglas de interacción aplicadas a lo que el formulario devolvió (ya limpio):
+     * el motivo del rechazo, o `null` si pasa.
+     *
+     * - Editar: `MutationValidator::validateEdit()`, según lo que cambie (inicio, duración,
+     *   recurso), con rango válido, horario laboral (`eventConstraint`) y solapes (`eventOverlap`,
+     *   `overlap` del evento).
+     * - Crear: lo de seleccionar un rango (`selectConstraint`, `selectOverlap`). El rango válido
+     *   ya lo comprobó `EventFormPayload`.
+     *
+     * @param  array<string, mixed>  $clean
+     * @param  list<EventInstance>|null  $instances  Los eventos de la vista, si ya se pidieron (al editar).
+     */
+    private function koreFormRefusal(string $mode, array $clean, CalendarSettings $settings, ?EventInstance $instance, ?array $instances): ?string
+    {
+        $builder = MutationBuilder::fromSettings($settings);
+        $validator = new MutationValidator($settings, $this->koreResources());
+        $start = Marker::parse($clean['start']);
+        $end = $clean['end'] === null ? null : Marker::parse($clean['end']);
+
+        if ($mode === 'edit') {
+            return $validator->validateEdit(
+                $builder->edit($instance, $start, $end, $clean['allDay'], $clean['resourceIds']),
+                $instances ?? [],
+            );
+        }
+
+        // Los eventos de la vista solo se piden si hay una regla que los use (`selectOverlap(false)`).
+        return $validator->validateSelectionRules(
+            $builder->draft($start, $end, $clean['allDay'], $clean['resourceId']),
+            $settings->selectOverlap ? [] : $this->koreInstances($settings),
+        );
     }
 
     /** Abre el formulario de un evento nuevo con el rango que se seleccionó. */

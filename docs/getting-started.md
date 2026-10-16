@@ -61,6 +61,7 @@ Los eventos pueden ser arrays, `CalendarEvent` o fuentes (`EventSource`: `Eloque
 | `business-hours` | `bool\|array` | `false` | Horario laboral: pinta lo que no lo es ([ver](#horario-laboral-y-disponibilidad)) |
 | `highlight-conflicts` | `bool` | `false` | Marca los eventos que se solapan en el mismo recurso |
 | `toolbar` | `bool` | `true` | Barra con navegación y selector de vista |
+| `mobile-view` | `string` | config `mobile_view` | Vista que se abre en una pantalla estrecha la primera vez, si la URL no trae `?view=` ([ver](configuration.md#pantallas-estrechas)) |
 | `date-param` / `view-param` | `string` | `date` / `view` | Nombres de los parámetros de la URL |
 
 Cada prop gana a la clave del config del mismo nombre. Las demás claves, y la lista completa con tipos y defaults, están en [Configuración](configuration.md#props-de-x-korecalendar). Los atributos que no son props (`class`, `id`, `data-*`) van al `div` que envuelve el calendario.
@@ -75,7 +76,7 @@ Cada prop gana a la clave del config del mismo nombre. Las demás claves, y la l
 | `allDay` | `bool\|null` | Sin indicar: día completo si `start` (y `end`) son fechas sin hora |
 | `resourceIds` / `resourceId` | `array` / `string` | Recursos del evento |
 | `color` | `string` | Token de kore-ui (`primary`, `secondary`, `accent`, `success`, `warning`, `destructive`, `info`, `muted`, `chart-1`…`chart-8`) o color CSS. Ver [Theming](theming.md#color-de-los-eventos) |
-| `url` | `string` | El evento es un enlace |
+| `url` | `string` | El evento es un enlace. Solo URL relativas o con esquema `http`, `https`, `mailto` o `tel`; otra cosa (`javascript:`, `data:`) lanza una `InvalidArgumentException` |
 | `display` | `string` | `auto`, `block`, `list-item`, `background`, `none` |
 | `groupId`, `editable`, `startEditable`, `durationEditable`, `overlap` | | Para la interacción en `KoreCalendar`: ganan a la configuración del calendario ([Edición](kore-calendar.md#edición-mover-redimensionar-y-seleccionar)) |
 | `rrule`, `exdates`, `recurrenceOf`, `recurrenceId` | | Eventos que se repiten: ver [Eventos recurrentes](#eventos-recurrentes) |
@@ -168,7 +169,7 @@ El color es el token `--kore-calendar-non-business`, derivado de `--kore-muted` 
 **Horario por recurso.** El `businessHours` de un recurso gana al del calendario para sus columnas o filas, con la misma forma. `false` (o `[]`) lo deja siempre abierto aunque el calendario tenga horario; `null` (por defecto) hereda el del calendario:
 
 ```php
-public function resources(): iterable
+protected function resources(): iterable
 {
     return [
         ['id' => 'sala-a', 'title' => 'Sala A', 'businessHours' => ['startTime' => '14:00', 'endTime' => '20:00']],

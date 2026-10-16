@@ -12,7 +12,7 @@ use KoreUi\Calendar\KoreCalendar;
 
 class TeamCalendar extends KoreCalendar
 {
-    public function configure(): void
+    protected function configure(): void
     {
         $this->views(['month', 'week', 'list', 'resource-week'])
             ->timezone(auth()->user()->timezone)
@@ -21,14 +21,16 @@ class TeamCalendar extends KoreCalendar
             ->maxEvents(3);
     }
 
-    public function events(CarbonImmutable $from, CarbonImmutable $to): iterable
+    protected function events(CarbonImmutable $from, CarbonImmutable $to): iterable
     {
-        return Meeting::overlapping($from, $to)->get()->map->toCalendarEvent();
+        return Meeting::query()
+            ->where('team_id', auth()->user()->team_id)   // el scope del tenant va AQUÍ: ver «Seguridad»
+            ->overlapping($from, $to)->get()->map->toCalendarEvent();
     }
 
-    public function resources(): iterable
+    protected function resources(): iterable
     {
-        return Room::orderBy('name')->get()->map(fn ($r) => ['id' => $r->id, 'title' => $r->name]);
+        return Room::where('team_id', auth()->user()->team_id)->orderBy('name')->get()->map(fn ($r) => ['id' => $r->id, 'title' => $r->name]);
     }
 }
 ```
@@ -38,6 +40,41 @@ class TeamCalendar extends KoreCalendar
 ```
 
 `events()` recibe el rango **dibujado** (con los días de relleno del mes) en instantes de la zona de la vista. Puede devolver arrays con la forma de un evento, `CalendarEvent` o lo que produzca el trait `HasCalendarEvents`.
+
+`events()`, `resources()` y `configure()` son `protected`, y los hooks de guardado también: ver [Seguridad](#seguridad).
+
+## Seguridad
+
+El calendario vuelve a validar todo lo que llega del navegador (fechas, rangos, solapes, editabilidad). Lo que **no** puede saber es quién es el usuario ni qué le toca ver: eso lo decides tú, en `events()` y en los hooks.
+
+- **`events()` es la frontera de acceso.** Mover, redimensionar, pulsar, editar y eliminar buscan el evento entre los que `events()` devuelve para la vista dibujada, nunca por id directo. Lo que `events()` no devuelve no se puede tocar. Aplica ahí el scope del tenant o del usuario (`where('team_id', …)`, una política, un `visibleTo($user)`): filtrar solo al pintar no sirve, porque lo que se pinta y lo que se puede tocar es lo mismo.
+- **Los hooks vuelven a cargar con el mismo scope y autorizan.** `persistMove()`, `updateEvent()` y `deleteEvent()` reciben un `CalendarEvent`, no tu modelo. Un `Meeting::find($event->id)` sin scope reabre lo que `events()` cerró (si algún día cambia `events()`, o dos calendarios comparten clase de evento). `createEvent()` no tiene evento previo: el propietario lo pones tú, no sale del navegador.
+
+```php
+protected function persistMove(CalendarEvent $event, EventMutation $mutation)
+{
+    $meeting = Meeting::where('team_id', auth()->user()->team_id)->findOrFail($event->id);
+    $this->authorize('update', $meeting);   // una AuthorizationException rechaza con «Este evento no se puede editar»
+
+    $meeting->update(['starts_at' => $mutation->start, 'ends_at' => $mutation->end]);
+}
+
+protected function createEvent(array $data)
+{
+    Meeting::create([
+        'team_id' => auth()->user()->team_id,    // el propietario es del servidor
+        'user_id' => auth()->id(),
+        'title' => $data['title'],
+        'starts_at' => $data['startAt'],
+        'ends_at' => $data['endAt'],
+    ]);
+}
+```
+
+- **Los métodos del consumidor son `protected`.** Livewire deja llamar desde el navegador a cualquier método **público** de la subclase: un `public function events()` se podría llamar con `$wire.events()` y devolvería los eventos completos, `meta` incluido; un `public function createEvent()`, con datos sin validar. Declara `protected` `events()`, `resources()`, `configure()` y los hooks (`persistMove`, `persistResize`, `createEvent`, `updateEvent`, `deleteEvent`, `onDateSelect`, `onEventClick`). Si alguno queda `public` (código escrito con los docs de antes) el paquete lo bloquea igualmente, para cualquier subclase (`KoreCalendar::SERVER_ONLY`): es una red de seguridad, no una razón para declararlos públicos. Un método público tuyo (el que llamas con `wire:click`) sigue siendo llamable por cualquiera: autorízalo tú.
+- **Las fechas de la URL se ignoran si no valen.** `?date=` (y `$wire.date`, y `goToDate()`) solo se usa si es una fecha real `YYYY-MM-DD` dentro de lo que admite el calendario; si no, sale «hoy». Por defecto se admiten 200 años a cada lado de hoy (`Bounds::WINDOW_YEARS`) para navegar, mover y crear; [`validRange()`](#edición-mover-redimensionar-y-seleccionar) lo amplía (una agenda histórica) o lo reduce. Un `validRange` con un solo extremo deja el otro en esa ventana.
+- **La `url` de un evento va a un `<a href>`.** `CalendarEvent` solo admite URL relativas o con esquema `http`, `https`, `mailto` o `tel` (sin distinguir mayúsculas ni mirar los espacios o caracteres de control del principio); `javascript:`, `data:` y cualquier otro lanzan una `InvalidArgumentException` al construir el evento. Un `//otro.example` (relativa al protocolo) se admite: lleva a otro sitio, pero no más que `https://otro.example`, y no ejecuta nada.
+- **Varias fuentes.** Las series y sus excepciones (`recurrenceOf`) se emparejan dentro de cada fuente: un `UID:5` de un `.ics` ajeno no sustituye a tu serie 5 ni oculta sus ocurrencias. Aun así, los ids de dos fuentes distintas no deberían coincidir si el usuario puede mover los eventos de las dos: prefija los de la fuente externa o márcalos `editable: false`.
 
 ## Eventos desde Eloquent
 
@@ -77,6 +114,7 @@ Con ella, una fila con regla entra si `start < $to` **aunque su fin sea anterior
 |--------|-----------|
 | `views(array)` | Vistas del selector |
 | `defaultView(string)` | Vista inicial cuando la URL no trae `?view=`. Si no está en `views`, la primera de `views` |
+| `mobileView(?string)` | Vista para pantallas estrechas en la primera carga sin `?view=`: lo hace el cliente, con un render extra la primera vez ([ver](configuration.md#pantallas-estrechas)) |
 | `timezone(string)`, `locale(string)`, `firstDay(int)`, `hiddenDays(array)` | |
 | `weekNumbers('iso'\|'locale'\|false)` | |
 | `slotDuration('15m')`, `slotMinTime('08:00')`, `slotMaxTime('20:00')` | Rejilla horaria |
@@ -99,7 +137,7 @@ Con ella, una fila con regla entra si `start < $to` **aunque su fin sea anterior
 | `previous()`, `next()` | Periodo anterior o siguiente |
 | `today()` | Vuelve a hoy (limpia `?date=`) |
 | `changeView(string)` | Cambia de vista; solo a las que ofrece el calendario |
-| `goToDate('YYYY-MM-DD')` | Va a una fecha; solo fechas reales |
+| `goToDate('YYYY-MM-DD')` | Va a una fecha; solo fechas reales dentro de lo que admite el calendario ([Seguridad](#seguridad)). `previous()` y `next()` tampoco se salen de ahí |
 | `clickEvent($id)` | Pulsar un evento: lo busca entre los de la vista y llama a `onEventClick()`. `$id` es el `instanceId` (`data-kore-instance`); el id del evento también vale, salvo en una serie |
 | `moveEvent($id, $start, $allDay, $resourceId = null, $fromResourceId = null)`, `resizeEvent($id, $edge, $fromStart = false)` | Lo que llama el arrastre (los instantes son `Marker` en segundos). Devuelven `['ok' => bool, 'message' => string]`. Con una ocurrencia no guardan: devuelven `needsScope` y abren el diálogo de alcance |
 | `selectRange($start, $end, $allDay, $resourceId = null)` | Lo que llama la selección de un rango. Valida y llama a `onDateSelect()`; sin `selectable()` no hace nada |
@@ -120,7 +158,11 @@ public function configure(): void
 
 protected function persistMove(CalendarEvent $event, EventMutation $mutation)
 {
-    Meeting::whereKey($event->id)->update([
+    // Con el mismo scope que events() y autorizando: ver «Seguridad».
+    $meeting = Meeting::where('team_id', auth()->user()->team_id)->findOrFail($event->id);
+    $this->authorize('update', $meeting);
+
+    $meeting->update([
         'starts_at' => $mutation->start,          // instante en la zona de la vista
         'ends_at' => $mutation->end,
         'room_id' => $mutation->resourceIds[0] ?? null,
@@ -129,7 +171,10 @@ protected function persistMove(CalendarEvent $event, EventMutation $mutation)
 
 protected function persistResize(CalendarEvent $event, EventMutation $mutation)
 {
-    Meeting::whereKey($event->id)->update(['ends_at' => $mutation->end]);
+    $meeting = Meeting::where('team_id', auth()->user()->team_id)->findOrFail($event->id);
+    $this->authorize('update', $meeting);
+
+    $meeting->update(['ends_at' => $mutation->end]);
 }
 
 protected function onDateSelect(Selection $selection): void
@@ -141,7 +186,7 @@ protected function onDateSelect(Selection $selection): void
 }
 ```
 
-- **Lo que manda el navegador no es fiable.** El evento se busca entre los que devuelve tu `events()` para la vista actual (respeta tus scopes y evita mover un evento ajeno), el destino se vuelve a ajustar al `snap` y se valida: editable, `validRange`, solapes (`eventOverlap(false)`, o `overlap: false` en un evento; los del mismo `groupId` no chocan entre sí) y que el recurso destino exista.
+- **Lo que manda el navegador no es fiable.** El evento se busca entre los que devuelve tu `events()` para la vista actual (respeta tus scopes y evita mover un evento ajeno: `events()` es la frontera de acceso, ver [Seguridad](#seguridad)), el destino se vuelve a ajustar al `snap` y se valida: editable, `validRange`, solapes (`eventOverlap(false)`, o `overlap: false` en un evento; los del mismo `groupId` no chocan entre sí) y que el recurso destino exista.
 - **El hook decide al final.** `persistMove` / `persistResize` devuelven `null` o `true` para aceptar, `false` o un texto para rechazar (el texto es el motivo que verá el usuario). Corren dentro de una transacción si hay base de datos. Una `ValidationException` muestra su mensaje; cualquier otra excepción se reporta y se rechaza con un mensaje genérico.
 - **Al aceptar** se disparan los eventos de Laravel `EventMoved` / `EventResized` (con `calendarClass`, `event` y `mutation`) y el cambio se anuncia al lector de pantalla. **Al rechazar**, toast de error con el motivo y el evento no se mueve.
 - **`EventMutation`**: `start`, `end` (instantes), `startMarker`, `endMarker` (horas de pared), `allDay`, `resourceIds`, los valores `previous*`, `deltaSeconds`, `isResourceChange()`, `isAllDayChange()`. En una ocurrencia de una serie, además, `scope`, `seriesId`, `recurrenceId` y `occurrenceStart` ([Series recurrentes](#series-recurrentes-editar-por-alcance)).
@@ -159,7 +204,7 @@ protected function onDateSelect(Selection $selection): void
 | `eventConstraint('businessHours'\|null)` | Un evento movido o redimensionado tiene que quedar en horario laboral |
 | `selectConstraint('businessHours'\|null)` | Lo mismo al seleccionar un rango |
 | `selectOverlap(bool)` | `false`: no se puede seleccionar un rango que pisa un evento |
-| `validRange(?string $start, ?string $end)` | Fechas fuera de las que no se puede soltar |
+| `validRange(?string $start, ?string $end)` | Fechas fuera de las que no se puede soltar. Sin él, 200 años a cada lado de hoy; con él, ese rango (más amplio o más estrecho). Un extremo `null` queda en esa ventana |
 | `allDayMaintainDuration(bool = true)` | Conservar la duración al cambiar de tipo |
 | `resourceEditable(bool)` | Si se puede cambiar un evento de recurso |
 | `eventForm(bool = true)` | El formulario de kore-ui para crear y editar eventos |
@@ -192,7 +237,8 @@ public function configure(): void
 - **Sin horario definido, todo vale** (`businessHours` en `false` o vacío): una restricción sin horario no prohíbe nada. FullCalendar rechaza todo en ese caso, que es casi siempre un descuido.
 - **Mensajes** (`lang/` y `translations`): `outside_business_hours` («Fuera del horario laboral») y `outside_business_hours_resource` («Fuera del horario de :resource»), que sale cuando el recurso tiene su propio horario o es el que falla. Salen en el toast de siempre y como anuncio.
 - **Orden de las comprobaciones:** editable → cambio de recurso permitido → rango válido → horario laboral → solapes. Antes de todas, el recurso destino tiene que existir en `resources()`.
-- **El formulario de evento no aplica estas restricciones** (crear y editar con `eventForm()` solo comprueba el rango válido, como siempre): valida `createEvent()` / `updateEvent()` con `BusinessHours` si las necesitas. Y **deshacer** no las aplica: devuelve el evento a donde estaba, aunque ya estuviera fuera de horario.
+- **Un solape con un evento que no se dibuja** (`display: background` o `none`) rechaza con el mensaje genérico `invalid_change`, sin nombrarlo: su título no lo ve nadie y el rechazo no debe ser la forma de leerlo. Con uno visible sigue diciendo «Se solapa con «Reunión»».
+- **El formulario de evento las aplica igual** ([Crear y editar eventos](#crear-y-editar-eventos)): editar según lo que cambie, crear con las reglas de seleccionar. **Deshacer** no las aplica: devuelve el evento a donde estaba, aunque ya estuviera fuera de horario.
 - **Solo `'businessHours'`.** FullCalendar admite también un `groupId` o un rango como restricción; aquí una restricción desconocida lanza una excepción y la regla de negocio que no sea el horario va en `persistMove()` / `persistResize()`.
 
 ### Conflictos
@@ -273,6 +319,8 @@ public function configure(): void
 protected function createEvent(array $data)
 {
     Meeting::create([
+        'team_id' => auth()->user()->team_id,   // el propietario lo pone el servidor, no el formulario
+        'user_id' => auth()->id(),
         'title' => $data['title'],
         'starts_at' => $data['startAt'],     // instantes en la zona del calendario
         'ends_at' => $data['endAt'],         // null si el evento no tiene fin
@@ -284,12 +332,18 @@ protected function createEvent(array $data)
 
 protected function updateEvent(CalendarEvent $event, array $data)
 {
-    Meeting::findOrFail($event->id)->update([/* igual que arriba */]);
+    $meeting = Meeting::where('team_id', auth()->user()->team_id)->findOrFail($event->id);
+    $this->authorize('update', $meeting);
+
+    $meeting->update([/* igual que arriba, sin team_id ni user_id */]);
 }
 
 protected function deleteEvent(CalendarEvent $event)
 {
-    Meeting::whereKey($event->id)->delete();
+    $meeting = Meeting::where('team_id', auth()->user()->team_id)->findOrFail($event->id);
+    $this->authorize('delete', $meeting);
+
+    $meeting->delete();
 }
 ```
 
@@ -297,6 +351,12 @@ El layout necesita `<livewire:kore-overlay-manager />` (el formulario es un over
 
 - **Seleccionar un rango** (hace falta `selectable()`) abre el formulario de un evento nuevo con ese rango y el recurso donde se soltó. **Pulsar un evento** (clic, o Intro con el teclado) abre el de edición. Los eventos con `url` siguen siendo enlaces, y uno con `editable: false` no abre el formulario.
 - **El formulario no guarda nada.** Valida lo que se escribe (título obligatorio y de 255 caracteres como máximo, fechas reales, fin no anterior al inicio) y devuelve los datos al calendario que lo abrió; el calendario los vuelve a comprobar y llama al hook. Eliminar pide antes confirmación con el diálogo de kore-ui.
+- **El formulario pasa por las mismas reglas que el arrastre**, con los mismos motivos en el toast. El calendario lo comprueba con lo que el servidor sabe, no con lo que el formulario dejó escribir:
+  - **Editar**: según lo que cambie. Mover el inicio (o pasar de día completo a con hora, o cambiar de recurso) pide poder mover (`startEditable`, si no `editable` del evento, si no `editable()` del calendario); cambiar la duración, poder redimensionar (`durationEditable`, igual); cambiar de recurso, además `resourceEditable()`. Después, `validRange`, `eventConstraint('businessHours')` y los solapes (`eventOverlap(false)`, o `overlap: false` en un evento). Un cambio que solo toca el título o el color no mira nada de eso, y un evento ya fuera de horario se puede renombrar. Un evento con `editable: false` no se edita de ninguna forma.
+  - **Crear**: las reglas de seleccionar (`selectConstraint('businessHours')`, `selectOverlap(false)`) y `validRange`. Lo que habilita crear es `eventForm()`; `selectable()` solo es el gesto que abre el formulario, y un botón propio puede abrirlo sin él.
+  - **Eliminar**: pide `editable`: el del evento o, si no dice nada, el del calendario (`startEditable` y `durationEditable` hablan de las fechas y no cuentan).
+
+  Si tenías `eventForm()` sin `editable()`, editar fechas y eliminar desde el formulario se rechazan ahora con «Este evento no se puede editar»: añade `->editable()` (o `editable: true` en los eventos que sí) si es lo que quieres.
 - **Los hooks** tienen el contrato de `persistMove`: `null` o `true` aceptan, `false` o un texto rechazan con ese motivo, corren dentro de una transacción si hay base de datos y una excepción se reporta. Por defecto rechazan con un mensaje que dice qué método falta. Éxito: toast de éxito. Rechazo: toast de error con el motivo.
 - **`$data`** (ya limpio):
 
@@ -310,8 +370,8 @@ El layout necesita `<livewire:kore-overlay-manager />` (el formulario es un over
 
 - **`deleteEvent(CalendarEvent $event)`** recibe además un segundo argumento, `array $data` (`mode: 'delete'`, `id` y, en una ocurrencia, las claves de la serie). La base no lo declara para no romper a quien ya la sobrescribe con un solo parámetro: declara `deleteEvent(CalendarEvent $event, array $data = [])` para leerlo.
 - **En el formulario el fin de un día completo es inclusivo** («del 14 al 16» incluye el 16, como se dice en voz alta); en `$data` ya es exclusivo, como en todo el paquete.
-- **No te fíes del navegador, y el calendario tampoco.** El aviso del formulario es un evento de Livewire que cualquiera puede lanzar con lo que quiera dentro, así que el calendario ignora el que lleva el id de otro calendario o llega sin `eventForm()`, busca el evento entre los de `events()` (un id ajeno o de otra semana se rechaza), y revisa cada campo: tipos, fechas que existen, recurso de `resources()`, color de la lista y `validRange`.
-- **Qué NO comprueba:** los solapes (`eventOverlap(false)`), los permisos ni las reglas de negocio. Van en el hook, que puede rechazar con un texto o lanzar una `AuthorizationException` (`$this->authorize('update', $meeting)`), igual que en `persistMove()`.
+- **No te fíes del navegador, y el calendario tampoco.** El aviso del formulario es un evento de Livewire que cualquiera puede lanzar con lo que quiera dentro, así que el calendario ignora el que lleva el id de otro calendario o llega sin `eventForm()`, busca el evento entre los de `events()` (un id ajeno o de otra semana se rechaza), y revisa cada campo: tipos, fechas que existen, recurso de `resources()`, color de la lista y las reglas de interacción de arriba.
+- **Qué NO comprueba:** los permisos de tu aplicación ni las reglas de negocio. Van en el hook, que puede rechazar con un texto o lanzar una `AuthorizationException` (`$this->authorize('update', $meeting)`), igual que en `persistMove()`: ver [Seguridad](#seguridad). El color propio de un evento (`#ff8800`) se ofrece como una opción más, con la etiqueta «Color» y no con su valor, y solo si es un color CSS válido: uno que no lo es no se pinta ni se ofrece.
 - **Personalizar:** `onDateSelect()` y `onEventClick()` se pueden sobrescribir (con `parent::` para conservar lo del formulario). Sobrescribir `onEventClick()` basta para que los eventos sean pulsables sin formulario: se pintan enfocables (`role="button"`) y el hook recibe el `CalendarEvent` ya resuelto.
 - **Textos:** todos están en `lang/{en,es}/calendar.php` (`form_*`, `color_*`, `event_created`…) y se cambian con `translations`: ver [Idioma y traducciones](configuration.md#idioma-y-traducciones). El formulario habla el idioma del calendario que lo abre.
 
@@ -359,7 +419,7 @@ elegir    ─▶ applyRecurrenceScope('this') ─▶ vuelve a resolver y a valid
 - **`$mutation->scope`**: `this`, `following` o `all` (`null` en un evento normal). **`seriesId`**: la serie, para cargarla. **`recurrenceId`** (`Marker`) y **`occurrenceStart`** (instante): el inicio ORIGINAL de la ocurrencia, aunque se haya movido antes. `$mutation->isOccurrence()` los distingue de un evento normal.
 - **Con `all`, la mutación es el desplazamiento de la serie, no la nueva posición de la ocurrencia.** `start` y `end` dicen dónde queda ESA ocurrencia; a la serie hay que sumarle `$mutation->deltaSeconds` a su `start` (`RecurrenceEditor::shift()`). Guardar `$mutation->start` como inicio de la serie la movería a esa fecha y perdería todas las anteriores. Al redimensionar, `RecurrenceEditor::resize()`.
 - **`updateEvent($event, $data)`** (el formulario) gana en una ocurrencia las mismas claves en `$data`: `scope`, `seriesId`, `recurrenceId`, `occurrenceStart`, y `deltaSeconds` (cuánto se movió su inicio, para `all`). **`deleteEvent($event, $data)`**, las cuatro primeras.
-- La validación es la de la ocurrencia que se tocó (editable, `validRange`, solapes): con `all` no se comprueban las demás.
+- La validación es la de la ocurrencia que se tocó (editable, `validRange`, horario laboral, solapes), también si el cambio viene del formulario: con `all` no se comprueban las demás.
 
 ### `RecurrenceEditor`
 

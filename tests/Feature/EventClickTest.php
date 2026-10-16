@@ -53,6 +53,8 @@ it('un calendario de solo lectura sin clic no pinta eventos enfocables', functio
 });
 
 it('con eventForm() los eventos son enfocables aunque el calendario no sea editable', function () {
+    FormCalendar::$config = ['interaction.editable' => false];
+
     $html = Livewire::test(FormCalendar::class)->html();
 
     expect($html)->toContain('data-clickable')
@@ -66,8 +68,6 @@ it('con eventForm() los eventos son enfocables aunque el calendario no sea edita
 });
 
 it('un evento movible y pulsable lleva los dos atributos y una sola parada de tabulación', function () {
-    FormCalendar::$undoable = true;   // esto lo hace editable()
-
     $html = Livewire::test(FormCalendar::class)->html();
 
     expect($html)->toContain('data-movable')

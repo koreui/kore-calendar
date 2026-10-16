@@ -4,6 +4,7 @@ namespace KoreUi\Calendar\Interaction;
 
 use KoreUi\Calendar\Availability\BusinessHours;
 use KoreUi\Calendar\Availability\Collision;
+use KoreUi\Calendar\Events\CalendarEvent;
 use KoreUi\Calendar\Events\EventInstance;
 use KoreUi\Calendar\Resources\ResourceSet;
 use KoreUi\Calendar\Time\DateRange;
@@ -28,6 +29,12 @@ use KoreUi\Calendar\View\CalendarSettings;
  */
 final class MutationValidator
 {
+    /**
+     * La clave del rechazo por solapar un evento que no se dibuja: «Se solapa con otro
+     * evento», sin su título, que la vista no muestra.
+     */
+    private const HIDDEN_OVERLAP = 'overlap_rejected_hidden';
+
     private bool $checkHours = true;
 
     public function __construct(
@@ -78,9 +85,45 @@ final class MutationValidator
     }
 
     /**
+     * Un evento editado en el formulario. Las mismas reglas que al arrastrarlo, aplicadas
+     * a lo que el usuario cambió y no a todo: mover el inicio (o la modalidad, o el
+     * recurso) pide `canMove`, cambiar la duración pide `canResize` y cambiar de recurso
+     * pide además `canChangeResource`. Después, rango válido, horario laboral y solapes.
+     *
+     * Un cambio que no toca fechas ni recurso (el título, el color) no pasa por aquí: no hay
+     * nada que validar, y un evento ya fuera de horario no debe poder editarse por eso.
+     *
+     * @param  iterable<EventInstance>  $instances  Los eventos de la vista, incluido el que se edita.
+     */
+    public function validateEdit(EventMutation $mutation, iterable $instances): ?string
+    {
+        if ($mutation->isNoop()) {
+            return null;
+        }
+
+        $moved = $mutation->isAllDayChange()
+            || $mutation->isResourceChange()
+            || ! $mutation->startMarker->equals($mutation->previousStartMarker);
+        $resized = $mutation->endMarker->ts - $mutation->startMarker->ts
+            !== $mutation->previousEndMarker->ts - $mutation->previousStartMarker->ts;
+
+        if (($moved && ! Editability::canMove($mutation->event, $this->settings))
+            || ($resized && ! Editability::canResize($mutation->event, $this->settings))) {
+            return $this->text('not_editable');
+        }
+
+        if ($mutation->isResourceChange() && ! Editability::canChangeResource($mutation->event, $this->settings)) {
+            return $this->text('resource_locked');
+        }
+
+        return $this->rangeError($mutation) ?? $this->hoursError($mutation) ?? $this->overlapError($mutation, $instances);
+    }
+
+    /**
      * Una selección tiene que caer dentro del rango válido. Es lo único que
-     * comprueba el formulario de evento, que también lo usa: editar un evento
-     * existente no puede rechazarse por solaparse consigo mismo.
+     * comprueba el formulario de evento al crear (con `validateSelectionRules()`) y
+     * al editar su rango: editar un evento existente no puede rechazarse por
+     * solaparse consigo mismo.
      */
     public function validateSelection(Selection $selection): ?string
     {
@@ -111,16 +154,20 @@ final class MutationValidator
     /**
      * El rango ENTERO tiene que caber, no solo el inicio: un evento que empieza
      * dentro y acaba fuera también se sale del rango.
+     *
+     * Cabe en `Bounds::window()`: la ventana por defecto, o el `valid_range` del
+     * consumidor si lo hay (que la sustituye).
      */
     private function withinRange(int $start, int $end): ?string
     {
+        // Los límites duros primero: con un entero cualquiera ni siquiera se construye el rango.
         if (! Bounds::contains($start, $end)) {
             return $this->text('out_of_range');
         }
 
-        $valid = $this->settings->validRange;
+        $window = Bounds::window($this->settings->validRange);
 
-        if ($valid !== null && ! $valid->containsRange(new DateRange(Marker::fromTimestamp($start), Marker::fromTimestamp($end)))) {
+        if ($start < $window->start->ts || $end > $window->end->ts) {
             return $this->text('out_of_range');
         }
 
@@ -166,7 +213,7 @@ final class MutationValidator
                 continue;
             }
 
-            return $this->text('overlap_rejected', ['title' => $event->title]);
+            return $this->overlapText($event);
         }
 
         return null;
@@ -201,7 +248,7 @@ final class MutationValidator
             $exact = ! $selection->allDay;
 
             if (Collision::intersects($selection->startMarker, $selection->endMarker, $exact ? $selection->start : null, $exact ? $selection->end : null, $other)) {
-                return $this->text('overlap_rejected', ['title' => $other->event->title]);
+                return $this->overlapText($other->event);
             }
         }
 
@@ -251,6 +298,18 @@ final class MutationValidator
         }
 
         return null;
+    }
+
+    /**
+     * El motivo de un solape. Nombra al otro evento solo si se dibuja: el título de uno
+     * de fondo o `display: none` no lo ve nadie, y un rechazo no puede ser la forma de
+     * leerlo (el usuario podría sondear con movimientos y recorrer lo que hay detrás).
+     */
+    private function overlapText(CalendarEvent $other): string
+    {
+        return Collision::occupies($other)
+            ? $this->text('overlap_rejected', ['title' => $other->title])
+            : $this->text(self::HIDDEN_OVERLAP);
     }
 
     /** El motivo en el idioma del calendario. */

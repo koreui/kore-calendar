@@ -75,7 +75,7 @@
                     tabindex="{{ $i === $focusIndex ? '0' : '-1' }}"
                     @if ($c['isToday']) aria-current="date" @endif
                     @class([
-                        'truncate border-l border-kore-border px-2 py-1.5 text-center text-xs focus-visible:outline-2 focus-visible:outline-kore-ring',
+                        'kore-calendar-hit truncate border-l border-kore-border px-2 py-1.5 text-center text-xs focus-visible:outline-2 focus-visible:outline-kore-ring',
                         'font-semibold text-kore-primary-text' => $c['isToday'],
                         'text-kore-muted-fg' => ! $c['isToday'],
                     ])

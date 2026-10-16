@@ -3,6 +3,10 @@
     como FullCalendar: el popover se arma con las fuentes que cruzan la columna, una
     vez cada una (#6397).
 
+    Objetivos táctiles: el botón «+N más» mide al menos 24 px de alto y con un dedo su área de
+    toque llega a 44 (kore-calendar-hit: un ::after, sin cambiar el layout); el de cerrar lo
+    mide de verdad (kore-calendar-target).
+
     No se teletransporta: vive dentro de la celda, así que el Escape lo maneja él
     mismo y cumple el contrato del overlay de kore-ui (preventDefault solo si había
     algo que cerrar).
@@ -30,7 +34,7 @@
         aria-haspopup="dialog"
         aria-controls="{{ $id }}"
         aria-label="{{ $calendar->text('more_label', ['count' => $count, 'date' => $label]) }}"
-        class="w-full rounded-kore-sm px-1.5 text-left text-xs font-medium text-kore-muted-fg hover:bg-kore-muted hover:text-kore-fg focus-visible:outline-2 focus-visible:outline-kore-ring"
+        class="kore-calendar-hit w-full rounded-kore-sm px-1.5 text-left text-xs font-medium text-kore-muted-fg hover:bg-kore-muted hover:text-kore-fg focus-visible:outline-2 focus-visible:outline-kore-ring"
     >{{ $calendar->text('more', ['count' => $count]) }}</button>
 
     <div
@@ -45,7 +49,7 @@
     >
         <div class="mb-1.5 flex items-center justify-between gap-2">
             <span class="text-sm font-medium">{{ $label }}</span>
-            <button type="button" x-on:click="open = false; $nextTick(() => $refs.trigger.focus())" aria-label="{{ $calendar->text('close') }}" class="rounded-kore-sm p-0.5 text-kore-muted-fg hover:bg-kore-muted hover:text-kore-fg">
+            <button type="button" x-on:click="open = false; $nextTick(() => $refs.trigger.focus())" aria-label="{{ $calendar->text('close') }}" class="kore-calendar-target inline-flex items-center justify-center rounded-kore-sm p-0.5 text-kore-muted-fg hover:bg-kore-muted hover:text-kore-fg focus-visible:outline-2 focus-visible:outline-kore-ring">
                 <x-lucide-x class="size-4" aria-hidden="true" />
             </button>
         </div>

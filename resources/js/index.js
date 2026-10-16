@@ -17,11 +17,13 @@
 import KoreCalendarInteraction from './interaction/calendar.js';
 import KoreCalendarGrid from './grid.js';
 import KoreCalendarTimeline from './timeline.js';
+import KoreCalendarMobileView from './mobile-view.js';
 
 const COMPONENTES = {
     KoreCalendarGrid,
     KoreCalendarTimeline,
     KoreCalendarInteraction,
+    KoreCalendarMobileView,
 };
 
 const registrar = () => {

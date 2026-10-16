@@ -47,11 +47,16 @@ final class EventCollector
         $to = $this->clock->toInstant($range->end);
 
         // Dos pasadas: primero se recoge todo, porque una ocurrencia modificada
-        // puede llegar antes que su serie (o de otra fuente), y la serie tiene que
-        // saber qué ocurrencias NO generar.
+        // puede llegar antes que su serie, y la serie tiene que saber qué ocurrencias
+        // NO generar.
+        //
+        // Series y excepciones se emparejan DENTRO de su fuente: los ids son de cada fuente,
+        // y un `.ics` con `UID:5` no es la serie 5 de la base de datos. Indexar solo por id
+        // dejaba que un feed ajeno sustituyera una serie o ocultara sus ocurrencias.
         $series = [];
         $overrides = [];
         $plain = [];
+        $sourceIndex = 0;
 
         foreach ($sources as $source) {
             if (! $source instanceof EventSource) {
@@ -66,11 +71,13 @@ final class EventCollector
                 $event = $this->toEvent($source, $item);
 
                 match (true) {
-                    $event->isRecurring() => $series[(string) $event->id] = $event,
-                    $event->isOverride() => $overrides[] = $event,
+                    $event->isRecurring() => $series[$sourceIndex][(string) $event->id] = $event,
+                    $event->isOverride() => $overrides[] = [$sourceIndex, $event],
                     default => $plain[] = $event,
                 };
             }
+
+            $sourceIndex++;
         }
 
         $instances = [];
@@ -80,14 +87,15 @@ final class EventCollector
         }
 
         // La modificada SUSTITUYE a la generada, no se suma (FullCalendar #6451:
-        // RECURRENCE-ID duplicado). Se identifica en la representación de su serie.
+        // RECURRENCE-ID duplicado). Se identifica en la representación de su serie,
+        // que ha de ser de la misma fuente.
         $skip = [];
-        foreach ($overrides as $override) {
-            $parent = $series[(string) $override->recurrenceOf] ?? null;
+        foreach ($overrides as [$sourceIndex, $override]) {
+            $parent = $series[$sourceIndex][(string) $override->recurrenceOf] ?? null;
             $key = $parent ? RecurrenceExpander::key($parent, $override->recurrenceId, $this->clock) : null;
 
             if ($key !== null) {
-                $skip[(string) $override->recurrenceOf][$key] = true;
+                $skip[$sourceIndex][(string) $override->recurrenceOf][$key] = true;
             }
 
             $normalized = $this->normalizer->normalize($override);
@@ -107,8 +115,10 @@ final class EventCollector
             );
         }
 
-        foreach ($series as $id => $event) {
-            array_push($instances, ...$this->expander->expand($event, $range, $skip[$id] ?? []));
+        foreach ($series as $sourceIndex => $ofSource) {
+            foreach ($ofSource as $id => $event) {
+                array_push($instances, ...$this->expander->expand($event, $range, $skip[$sourceIndex][$id] ?? []));
+            }
         }
 
         // Semiabierto: el evento que acaba justo cuando empieza el rango no entra.

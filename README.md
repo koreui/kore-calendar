@@ -77,14 +77,16 @@ use KoreUi\Calendar\KoreCalendar;
 
 class TeamCalendar extends KoreCalendar
 {
-    public function configure(): void
+    protected function configure(): void
     {
         $this->views(['month', 'week', 'list'])->timezone('Europe/Madrid');
     }
 
-    public function events(CarbonImmutable $from, CarbonImmutable $to): iterable
+    protected function events(CarbonImmutable $from, CarbonImmutable $to): iterable
     {
-        return Meeting::overlapping($from, $to)->get()->map->toCalendarEvent();
+        return Meeting::query()
+            ->where('team_id', auth()->user()->team_id)   // el scope del tenant va aquí
+            ->overlapping($from, $to)->get()->map->toCalendarEvent();
     }
 }
 ```
@@ -94,6 +96,8 @@ class TeamCalendar extends KoreCalendar
 ```
 
 La vista y la fecha quedan en la URL (`?view=`, `?date=`). Para mover, redimensionar, crear y editar eventos, `->editable()->selectable()->eventForm()` y los hooks `persistMove()`, `persistResize()`, `createEvent()`…: ver [KoreCalendar](docs/kore-calendar.md).
+
+**Seguridad, en corto.** `events()` es la frontera de acceso: mover, editar o eliminar un evento lo busca entre los que `events()` devuelve, así que lo que no devuelve no se puede tocar. Pon ahí el scope del tenant o del usuario, y vuelve a aplicarlo (más `$this->authorize()`) en los hooks de guardado, que reciben un id y no tu modelo. `events()`, `resources()`, `configure()` y los hooks son `protected`: Livewire deja llamar desde el navegador a cualquier método público. Detalle y ejemplos en [Seguridad](docs/kore-calendar.md#seguridad).
 
 ## Vistas
 

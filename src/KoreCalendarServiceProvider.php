@@ -8,7 +8,10 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use KoreUi\Calendar\Overlays\EventForm;
 use KoreUi\Calendar\Overlays\RecurrenceScope;
+use Livewire\Exceptions\MethodNotFoundException;
 use Livewire\Livewire;
+
+use function Livewire\before;
 
 class KoreCalendarServiceProvider extends ServiceProvider
 {
@@ -101,6 +104,19 @@ class KoreCalendarServiceProvider extends ServiceProvider
 
         // Y el diálogo que pregunta el alcance de un cambio en una serie recurrente.
         Livewire::component('kore-calendar-recurrence-scope', RecurrenceScope::class);
+
+        // Livewire deja llamar desde el navegador a cualquier método PÚBLICO de la subclase, y los
+        // docs (y mucho código copiado) enseñan `public function events()`: `$wire.events()` devolvería
+        // los eventos completos, `meta` incluido, y `$wire.createEvent({...})` saltaría toda la
+        // validación. Los métodos del consumidor (`KoreCalendar::SERVER_ONLY`) son del servidor
+        // aunque los declare públicos: se rechazan como si no existieran, antes de que Livewire
+        // mire la visibilidad. `before` y no `on`: tiene que correr antes que cualquier otro
+        // oyente que pudiera contestar la llamada por su cuenta.
+        before('call', function ($component, $method) {
+            if ($component instanceof KoreCalendar && in_array(strtolower((string) $method), array_map('strtolower', KoreCalendar::SERVER_ONLY), true)) {
+                throw new MethodNotFoundException((string) $method);
+            }
+        });
 
         Route::get('/vendor/kore-calendar/kore-calendar.js', function () {
             $bundle = __DIR__.'/../dist/kore-calendar.js';

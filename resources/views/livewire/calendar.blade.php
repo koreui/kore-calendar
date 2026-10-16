@@ -43,7 +43,7 @@
     x-on:keydown.page-down="if (! keyboard) { $event.preventDefault(); $wire.next() }"
     x-on:keydown.t="if (! keyboard && ! $event.target.closest('input, textarea, select, [contenteditable]') && ! $event.ctrlKey && ! $event.metaKey && ! $event.altKey) { $event.preventDefault(); $wire.today() }"
 >
-    <x-kore::calendar :calendar="$koreCalendar" :views="$koreViews" mode="livewire" />
+    <x-kore::calendar :calendar="$koreCalendar" :views="$koreViews" :mobile-view="$koreMobileView" mode="livewire" />
 
     <div wire:ignore data-kore-calendar-overlay class="pointer-events-none absolute inset-0 z-40" aria-hidden="true"></div>
     <div class="sr-only" aria-live="assertive" aria-atomic="true" x-text="announcement"></div>

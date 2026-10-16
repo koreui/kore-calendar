@@ -15,6 +15,12 @@
     icono (decorativo) y un texto solo para lectores de pantalla que dice con quién. El
     aviso es del evento, no de la columna: en una vista por recurso sus trozos lo llevan todos.
 
+    En un mes estrecho (container query en kore-calendar.css) un evento con hora se queda en el
+    punto de color y una barra pierde la hora: la hora y el título llevan clases propias
+    (kore-calendar-event-time / -title) y se recortan como un sr-only, no se quitan del DOM,
+    así que el lector de pantalla los sigue leyendo. Solo lo hace dentro de una celda del mes;
+    en la ventana del «+N más» el texto se conserva.
+
     Si el calendario tiene clic activo (eventForm() o un onEventClick() propio), un
     evento sin `url` también es enfocable aunque no se pueda mover: lleva
     data-clickable y Intro (o un clic) lo abre.
@@ -66,7 +72,7 @@
     {{ $attributes->class([
         'block min-w-0 overflow-hidden text-xs leading-tight',
         'kore-calendar-event rounded-kore-sm px-1.5 py-0.5' => $display !== 'list-item',
-        'flex items-center gap-1.5 rounded-kore-sm px-1 py-0.5 text-kore-fg hover:bg-kore-muted' => $display === 'list-item',
+        'kore-calendar-event-dot flex items-center gap-1.5 rounded-kore-sm px-1 py-0.5 text-kore-fg hover:bg-kore-muted' => $display === 'list-item',
         'h-full' => $display === 'timed',
         'relative' => $resizable || $conflicts !== [],
         'kore-calendar-conflict pe-4' => $conflicts !== [],
@@ -76,8 +82,8 @@
 >
     @if ($display === 'list-item')
         <span class="kore-calendar-dot size-2 shrink-0 rounded-full" aria-hidden="true"></span>
-        <span class="shrink-0 tabular-nums text-kore-muted-fg">{{ $calendar->time($instance->range->start) }}</span>
-        <span class="truncate font-medium">{{ $event->title }}</span>
+        <span class="kore-calendar-event-time shrink-0 tabular-nums text-kore-muted-fg">{{ $calendar->time($instance->range->start) }}</span>
+        <span class="kore-calendar-event-title truncate font-medium">{{ $event->title }}</span>
     @elseif ($display === 'timed')
         <span @class(['block font-medium', 'truncate' => $short])>
             @if ($short && $showTime)<span class="tabular-nums font-normal">{{ $calendar->time($instance->range->start) }}</span> @endif{{ $event->title }}
@@ -87,7 +93,7 @@
         @endunless
     @else
         <span class="block truncate">
-            @if ($showTime)<span class="tabular-nums">{{ $calendar->time($instance->range->start) }}</span> @endif<span class="font-medium">{{ $event->title }}</span>
+            @if ($showTime)<span class="kore-calendar-event-time tabular-nums">{{ $calendar->time($instance->range->start) }}</span> @endif<span class="kore-calendar-event-title font-medium">{{ $event->title }}</span>
         </span>
     @endif
 
@@ -102,8 +108,8 @@
             aria-hidden="true"
             @class([
                 'kore-calendar-resize absolute',
-                'inset-x-0 bottom-0 h-1.5 cursor-ns-resize' => $display === 'timed',
-                'inset-y-0 end-0 w-1.5 cursor-ew-resize' => $display !== 'timed',
+                'kore-calendar-resize-y inset-x-0 bottom-0 cursor-ns-resize' => $display === 'timed',
+                'kore-calendar-resize-x inset-y-0 end-0 cursor-ew-resize' => $display !== 'timed',
             ])
         ></span>
     @endif

@@ -211,8 +211,26 @@ it('un evento de fondo no bloquea por la regla general, pero sí si dice overlap
     $estricto = ['interaction.event_overlap' => false];
 
     expect(ixValidateMove($vista, 1, '2026-10-14 14:30', $estricto))->toBeNull()
-        ->and(ixValidateMove($vista, 1, '2026-10-14 18:30', $estricto))->toBe('Se solapa con «Cierre»');
+        ->and(ixValidateMove($vista, 1, '2026-10-14 18:30', $estricto))->not->toBeNull();
 });
+
+it('el rechazo por solapar nombra al otro evento solo si se dibuja: el título de uno oculto no se filtra', function (string $display, bool $seNombra) {
+    $vista = [
+        ixInstance(1, '2026-10-14 10:00', '2026-10-14 11:00'),
+        ixInstance(2, '2026-10-14 18:00', '2026-10-14 19:00', extra: ['display' => $display, 'overlap' => false, 'title' => 'TITULO-PRIVADO']),
+    ];
+
+    $motivo = ixValidateMove($vista, 1, '2026-10-14 18:30');
+
+    expect($motivo)->not->toBeNull()
+        ->and(str_contains($motivo, 'TITULO-PRIVADO'))->toBe($seNombra);
+})->with([
+    'auto' => ['auto', true],
+    'block' => ['block', true],
+    'list-item' => ['list-item', true],
+    'background' => ['background', false],
+    'none' => ['none', false],
+]);
 
 it('un día completo y uno con hora del mismo día se solapan', function () {
     $vista = [

@@ -74,18 +74,21 @@ class FormCalendar extends KoreCalendar
 
     public function configure(): void
     {
+        // `editable()`: el formulario de un calendario que no lo es no puede cambiar fechas ni eliminar
+        // (tests/Feature/EventFormRulesTest.php). Un test lo apaga con `'interaction.editable' => false` en `$config`.
         $this->defaultView('week')
             ->views(['month', 'week', 'day', 'list', 'resource-week'])
             ->timezone('Europe/Madrid')
             ->firstDay(1)
-            ->snap('15m');
+            ->snap('15m')
+            ->editable();
 
         if (static::$form) {
             $this->eventForm();
         }
 
         if (static::$undoable) {
-            $this->editable()->undoable();
+            $this->undoable();
         }
 
         foreach (static::$config as $key => $value) {

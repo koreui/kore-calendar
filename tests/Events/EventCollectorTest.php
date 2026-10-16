@@ -245,3 +245,65 @@ it('una fecha inválida en un evento lanza con el id del evento', function () {
     expect(fn () => evColectorEn()->collect([$fuente], evSemana()))
         ->toThrow(InvalidArgumentException::class, 'Evento «roto»');
 });
+
+// ── Series y excepciones: cada una dentro de su fuente ───────────────
+
+/** Los títulos de lo recogido y cuántas veces sale cada uno. */
+function evTitulosRecogidos(iterable $fuentes): array
+{
+    $cuentas = array_count_values(array_map(fn (EventInstance $i) => $i->event->title, evColectorEn()->collect($fuentes, evSemana())));
+    ksort($cuentas);
+
+    return $cuentas;
+}
+
+function evSerie(string|int $id, string $titulo, string $inicio = '2026-10-12 09:00:00', string $regla = 'FREQ=DAILY;COUNT=7'): CalendarEvent
+{
+    return CalendarEvent::make(id: $id, title: $titulo, start: $inicio, end: date('Y-m-d H:i:s', strtotime($inicio) + 3600), rrule: $regla);
+}
+
+function evExcepcion(string|int $serie, string $titulo, string $ocurrencia, string $nuevoInicio = '2026-10-14 15:00:00'): CalendarEvent
+{
+    return CalendarEvent::make(
+        id: "{$serie}#{$ocurrencia}", title: $titulo, start: $nuevoInicio, end: date('Y-m-d H:i:s', strtotime($nuevoInicio) + 3600),
+        recurrenceOf: $serie, recurrenceId: $ocurrencia,
+    );
+}
+
+it('dos series con el mismo id en fuentes distintas son dos series: una no sustituye a la otra', function () {
+    // La base de datos tiene la serie 5; un `.ics` ajeno trae un `UID:5` que se convierte en el mismo id.
+    $propia = new ArraySource([evSerie(5, 'Reunión confidencial')]);
+    $ajena = new ArraySource([evSerie(5, 'Impostora', '2026-10-13 20:00:00', 'FREQ=DAILY;COUNT=1')]);
+
+    expect(evTitulosRecogidos([$propia, $ajena]))->toBe(['Impostora' => 1, 'Reunión confidencial' => 7])
+        ->and(evTitulosRecogidos([$ajena, $propia]))->toBe(['Impostora' => 1, 'Reunión confidencial' => 7]);
+});
+
+it('una excepción de otra fuente no oculta las ocurrencias de una serie con el mismo id', function () {
+    $propia = new ArraySource([evSerie(5, 'Reunión confidencial')]);
+    $ajena = new ArraySource([
+        evExcepcion(5, 'Oculta 1', '2026-10-14 09:00:00', '2030-01-01 09:00:00'),
+        evExcepcion(5, 'Oculta 2', '2026-10-15 09:00:00', '2030-01-01 09:00:00'),
+    ]);
+
+    // Siguen las siete: lo que trae la otra fuente cae fuera del rango y no reclama ninguna.
+    expect(evTitulosRecogidos([$propia, $ajena]))->toBe(['Reunión confidencial' => 7])
+        ->and(evTitulosRecogidos([$ajena, $propia]))->toBe(['Reunión confidencial' => 7]);
+});
+
+it('una excepción sí sustituye la ocurrencia de la serie de su propia fuente, llegue antes o después', function () {
+    $serie = evSerie(5, 'Serie');
+    $excepcion = evExcepcion(5, 'Cambiada', '2026-10-14 09:00:00');
+
+    // Siete menos la sustituida, más la cambiada.
+    expect(evTitulosRecogidos([new ArraySource([$serie, $excepcion])]))->toBe(['Cambiada' => 1, 'Serie' => 6])
+        ->and(evTitulosRecogidos([new ArraySource([$excepcion, $serie])]))->toBe(['Cambiada' => 1, 'Serie' => 6]);
+});
+
+it('una excepción de una fuente solo sustituye a la serie de esa fuente aunque otra tenga el mismo id', function () {
+    $propia = new ArraySource([evSerie(5, 'Propia')]);
+    $ajena = new ArraySource([evSerie(5, 'Ajena'), evExcepcion(5, 'Cambiada', '2026-10-14 09:00:00')]);
+
+    // La excepción reclama el 14 de SU serie (la ajena); la propia conserva sus siete.
+    expect(evTitulosRecogidos([$propia, $ajena]))->toBe(['Ajena' => 6, 'Cambiada' => 1, 'Propia' => 7]);
+});

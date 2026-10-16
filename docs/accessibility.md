@@ -78,6 +78,8 @@ El botón declara `aria-haspopup="dialog"`, `aria-expanded` y `aria-controls`, y
 
 Los botones de anterior y siguiente tienen nombre accesible (son solo icono). El grupo de vistas es un `role="group"` con nombre; la vista activa se marca con `aria-pressed` en `KoreCalendar` y con `aria-current="page"` en el componente de enlaces.
 
+En una barra estrecha (menos de `42rem`, por el ancho de la barra y no el de la pantalla) las vistas son un `<select>` nativo con `aria-label` (la traducción `views`), que hace lo mismo que los botones: `changeView` en `KoreCalendar`, y una navegación a la misma URL en el componente de enlaces. Los dos controles están en el DOM, pero el que no se ve lleva `display: none`, así que un lector de pantalla solo encuentra uno. El título (`h2`, `aria-live`) nunca se trunca: hace wrap.
+
 ### Formulario y diálogo de alcance
 
 Son overlays de kore-ui (foco, Escape y apilado los gestiona kore-ui). El diálogo de alcance enfoca «Solo este evento». El formulario no usa la validación del navegador (`novalidate`): los errores salen del servidor, en el idioma del calendario.
@@ -88,6 +90,19 @@ Son overlays de kore-ui (foco, Escape y apilado los gestiona kore-ui). El diálo
 - **Mover y redimensionar.** Una región oculta `aria-live="assertive"` anuncia el agarrar, cada paso, cancelar y el resultado del servidor (aceptado o motivo del rechazo). También con el ratón y con el dedo. Antes de cada anuncio se vacía la región, para que dos iguales seguidos se repitan.
 - **Toasts.** Los rechazos salen además en un toast de kore-ui. Los éxitos de mover y redimensionar solo se anuncian (con `undoable()` también en un toast con «Deshacer»); crear, editar y eliminar con el formulario sacan un toast de éxito.
 - **Series recurrentes.** Tras elegir el alcance en el diálogo, el gesto original ya terminó: el resultado sale solo en un toast.
+
+## Objetivos táctiles
+
+Todo lo que se pulsa mide **al menos 24 × 24 px** (WCAG 2.5.8, nivel AA) con cualquier puntero, y con un puntero grueso (`pointer: coarse`, un dedo) su **área de toque llega a 44 × 44 px** (WCAG 2.5.5). Lo gobiernan dos variables de `kore-calendar.css`, `--kore-calendar-target-min` (`1.5rem`) y `--kore-calendar-target-coarse` (`2.75rem`), y dos clases:
+
+| Clase | Qué hace | Dónde |
+|---|---|---|
+| `.kore-calendar-target` | El elemento **mide** 24 px como mínimo y 44 con un dedo (la barra crece en táctil) | Botones y selector de vista de la barra, cerrar la ventana del «+N más», chevron de los grupos del timeline |
+| `.kore-calendar-hit` | Mide 24 px como mínimo y con un dedo su **área de toque** llega a 44 con un `::after`, sin cambiar el layout | «+N más», número del día del mes, cabeceras de columna de la semana |
+
+- **Asas de redimensionar.** Son una zona de agarre transparente de 24 px (44 con un dedo) con una franja visible de 6 px en el borde; la zona nunca pasa de la mitad del evento (el 60 % con un dedo), porque el resto tiene que seguir siendo la de mover. Sin hover (táctil), la franja se queda visible, tenue.
+- **Filas de evento.** `--kore-calendar-event-height` es de `1.5rem` (24 px). Antes era `1.375rem`.
+- **Un `::after` no cambia el tamaño medido** (`getBoundingClientRect`): una herramienta que mide la caja del elemento verá 24 px, y el toque llegará a 44.
 
 ## Táctil
 
@@ -106,7 +121,9 @@ Son overlays de kore-ui (foco, Escape y apilado los gestiona kore-ui). El diálo
 
 - **Crear eventos con el teclado.** Seleccionar un rango (`selectable()`) es un gesto de puntero o de dedo; no hay forma de hacerlo con el teclado ni de abrir el formulario de un evento nuevo desde él. Hace falta un botón propio en la aplicación.
 - **Cambiar de recurso o de tipo con el teclado.** Mover con el teclado solo cambia las fechas; no pasa de una columna o fila de recurso a otra, ni entre día completo y con hora.
-- **Redimensionar desde el inicio.** El asa existe solo en el borde final del evento, con el ratón y el dedo (6 px), y el teclado solo cambia el fin.
+- **Redimensionar desde el inicio.** El asa existe solo en el borde final del evento, con el ratón y el dedo, y el teclado solo cambia el fin.
+- **Objetivos de 24 px en todo.** Un evento con hora muy corto en la semana y el día (menos de unos 18 minutos con el `--kore-calendar-slot-height` de serie) es más bajo que 24 px (su alto es proporcional a la duración), y el asa de un evento de un día en un mes estrecho no llega a 24 px de ancho si la celda es muy estrecha. Con un dedo, la barra de un evento de día completo mide 24 px de alto y su asa 44 × 24: no cabe más en una celda.
+- **El título de un evento en un mes estrecho.** Con solo el punto de color, el título se lee con un lector de pantalla y en la ventana del «+N más» (que solo existe si una celda supera `max_events`) o al pulsar el evento (si es pulsable o un enlace). Un calendario de solo lectura, sin `max_events`, con eventos que no son enlaces, no ofrece en táctil una forma de ver el título de un punto.
 - **Flechas en la agenda y el timeline.** No hay navegación por celdas ahí; se recorre con Tab.
 - **Flechas verticales en semana y día.** Las cabeceras de columna son una sola fila.
 - **RTL de punta a punta.** Las flechas se invierten en la rejilla y al mover o redimensionar con el teclado, pero parte del diseño usa clases físicas (`border-l`, `text-right`) y el eje del timeline se coloca con `left`.

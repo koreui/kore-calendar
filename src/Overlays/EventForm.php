@@ -7,6 +7,7 @@ use KoreUi\Calendar\Interaction\EventFormPayload;
 use KoreUi\Calendar\Interaction\Messages;
 use KoreUi\Calendar\Support\Locale;
 use KoreUi\Calendar\Time\Marker;
+use KoreUi\Calendar\View\EventColor;
 use KoreUi\Core\Concerns\InteractsWithFeedback;
 use KoreUi\Overlay\OverlayComponent;
 use Livewire\Attributes\Locked;
@@ -48,6 +49,12 @@ class EventForm extends OverlayComponent
      * calendario descarta los que no son suyos, como el `callerRef` del confirm.
      */
     public const SAVED = 'kore-calendar:event-saved';
+
+    /**
+     * La clave de la etiqueta de la opción de un color propio (`#ff0000`): «Personalizado».
+     * Nunca el valor: viaja dentro del JSON que kore-ui imprime sin escapar.
+     */
+    private const CUSTOM_COLOR_LABEL = 'color_custom';
 
     // Lo que decide el calendario y el navegador no puede tocar: a quién se
     // devuelve el resultado, si se crea o se edita, y qué evento.
@@ -229,7 +236,12 @@ class EventForm extends OverlayComponent
             ->send();
     }
 
-    public function confirmDelete(): void
+    /**
+     * `protected` a propósito: lo llama `handleConfirmCallback()` desde dentro, cuando el
+     * diálogo de `delete()` lo autoriza (`koreConfirmable`). Público, `$wire.confirmDelete()`
+     * eliminaría el evento sin pasar por la confirmación.
+     */
+    protected function confirmDelete(): void
     {
         if ($this->mode !== 'edit') {
             return;
@@ -379,8 +391,11 @@ class EventForm extends OverlayComponent
         }
 
         // Su color, si no es de la lista: sin esta opción el selector lo enseñaría vacío y guardar lo borraría.
-        if ($this->originalColor !== null && ! isset(EventFormPayload::COLORS[$this->originalColor])) {
-            array_unshift($colors, ['value' => $this->originalColor, 'label' => $this->originalColor]);
+        // Solo si es un color CSS de verdad (`EventColor`): el valor viaja a un JSON que kore-ui pega sin
+        // escapar en la página, y uno con `<!--` o `</script>` la rompería. Un color que `EventColor` no
+        // pinta tampoco se ofrece (el evento ya sale sin color). La etiqueta es fija: nunca el valor.
+        if ($this->originalColor !== null && ! isset(EventFormPayload::COLORS[$this->originalColor]) && EventColor::css($this->originalColor) !== null) {
+            array_unshift($colors, ['value' => $this->originalColor, 'label' => $this->koreText(self::CUSTOM_COLOR_LABEL)]);
         }
 
         return view('kore-calendar::livewire.event-form', ['koreColors' => $colors]);

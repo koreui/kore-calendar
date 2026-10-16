@@ -9,6 +9,10 @@
 
     Horario laboral: un día sin ningún tramo se atenúa con un fondo decorativo
     (aria-hidden: la información accesible es la validación del servidor).
+
+    Ancho: la rejilla es un contenedor (kore-calendar.css, `.kore-calendar-month`). Por debajo de
+    40 rem los eventos con hora de una celda se quedan en el punto de color y las barras pierden
+    la hora; el título sigue en el DOM, recortado, para los lectores de pantalla.
 --}}
 @props(['calendar'])
 
@@ -32,7 +36,7 @@
     aria-label="{{ $calendar->title() }}"
     x-data="KoreCalendarGrid({ columns: {{ $columns }} })"
     x-on:keydown="onKeydown($event)"
-    {{ $attributes->class('kore-calendar-month overflow-hidden rounded-kore-lg border border-kore-border bg-kore-bg text-kore-fg') }}
+    {{ $attributes->class('kore-calendar-month w-full overflow-hidden rounded-kore-lg border border-kore-border bg-kore-bg text-kore-fg') }}
 >
     <div role="rowgroup">
         <div role="row" class="grid border-b border-kore-border" style="grid-template-columns: {{ $template }}">
@@ -83,7 +87,7 @@
                         <div
                             data-kore-calendar-cell="{{ $r * $columns + $c }}"
                             tabindex="{{ $r * $columns + $c === $focusIndex ? '0' : '-1' }}"
-                            class="flex justify-end px-1.5 pt-1 text-xs focus-visible:outline-2 focus-visible:outline-kore-ring"
+                            class="kore-calendar-hit flex justify-end px-1.5 pt-1 text-xs focus-visible:outline-2 focus-visible:outline-kore-ring"
                         >
                             <span class="sr-only">{{ $calendar->format($cell['date'], 'day_header_long') }}</span>
                             <span

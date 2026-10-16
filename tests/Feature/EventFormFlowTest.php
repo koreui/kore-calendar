@@ -9,6 +9,7 @@ use KoreUi\Calendar\Overlays\EventForm;
 use KoreUi\Calendar\Tests\Feature\Fixtures\FormCalendar as Cal;
 use KoreUi\Calendar\Tests\Feature\Fixtures\InteractiveCalendar;
 use KoreUi\Calendar\Tests\Feature\Fixtures\NoHooksCalendar;
+use KoreUi\Calendar\Time\Marker;
 use Livewire\Livewire;
 
 /*
@@ -403,4 +404,273 @@ it('el formulario tras guardar repinta el calendario con lo que events() devuelv
     Cal::$events = [...InteractiveCalendar::defaultEvents(), ['id' => 9, 'title' => 'Recién creado', 'start' => '2026-10-15 14:00', 'end' => '2026-10-15 15:00']];
 
     expect(ffSave($t, ffCreate())->html())->toContain('Recién creado');
+});
+
+// ── Las reglas de interacción también valen para el formulario ─────────
+//
+// El formulario no es un camino alternativo al arrastre: editar pasa por las mismas
+// reglas (editabilidad por lo que cambie, rango, horario laboral, solapes), crear por las
+// de seleccionar y eliminar pide `editable`. Con el mismo motivo en el toast.
+
+/** Un evento suelto, miércoles 14 de 10:00 a 11:30 (el 1 de siempre), con lo que el test le añada. */
+function ffEvento(array $extra = []): array
+{
+    return ['id' => 1, 'title' => 'Revisión', 'start' => '2026-10-14 10:00', 'end' => '2026-10-14 11:30', ...$extra];
+}
+
+/** Los datos de editar el evento 1 tal como está, con los cambios que se pidan. */
+function ffEditar(array $cambios = []): array
+{
+    return ffEdit(['title' => 'Revisión', 'start' => '2026-10-14 10:00:00', 'end' => '2026-10-14 11:30:00', ...$cambios]);
+}
+
+/** El motivo del último toast de error, o null si no hubo. */
+function ffMotivo($testable): ?string
+{
+    $toast = ffToast($testable);
+
+    return $toast !== null && $toast['type'] === 'error' ? $toast['description'] : null;
+}
+
+it('editar: un calendario editable(false) no deja mover ni cambiar la duración, pero sí el título', function () {
+    Cal::$config = ['interaction.editable' => false];
+    Cal::$events = [ffEvento()];
+
+    $mover = ffSave(Livewire::test(Cal::class), ffEditar(['start' => '2026-10-14 12:00:00', 'end' => '2026-10-14 13:30:00']));
+    $duracion = ffSave(Livewire::test(Cal::class), ffEditar(['end' => '2026-10-14 12:00:00']));
+    $todoElDia = ffSave(Livewire::test(Cal::class), ffEditar(['allDay' => true, 'start' => '2026-10-14', 'end' => '2026-10-15']));
+
+    expect(Cal::$updated)->toBe([])
+        ->and(ffToast($mover))->toMatchArray(['type' => 'error', 'title' => 'No se pudo guardar el evento', 'description' => 'Este evento no se puede editar'])
+        ->and(ffMotivo($duracion))->toBe('Este evento no se puede editar')
+        ->and(ffMotivo($todoElDia))->toBe('Este evento no se puede editar');
+
+    // Lo que no toca fechas ni recurso no es un movimiento.
+    ffSave(Livewire::test(Cal::class), ffEditar(['title' => 'Otro título', 'color' => 'info']));
+
+    expect(Cal::$updated)->toHaveCount(1)->and(Cal::$updated[0][1]['title'])->toBe('Otro título');
+});
+
+it('editar: startEditable false impide mover el inicio, pero no cambiar el fin', function () {
+    Cal::$events = [ffEvento(['startEditable' => false])];
+
+    // Mover sin tocar la duración, y mover solo el inicio: los dos cambian el inicio.
+    $mover = ffSave(Livewire::test(Cal::class), ffEditar(['start' => '2026-10-14 12:00:00', 'end' => '2026-10-14 13:30:00']));
+    $inicio = ffSave(Livewire::test(Cal::class), ffEditar(['start' => '2026-10-14 10:30:00']));
+
+    expect(Cal::$updated)->toBe([])
+        ->and(ffMotivo($mover))->toBe('Este evento no se puede editar')
+        ->and(ffMotivo($inicio))->toBe('Este evento no se puede editar');
+
+    // El fin sí (es un redimensionado).
+    ffSave(Livewire::test(Cal::class), ffEditar(['end' => '2026-10-14 12:00:00']));
+
+    expect(Cal::$updated)->toHaveCount(1);
+});
+
+it('editar: durationEditable false impide cambiar la duración, pero no mover el evento entero', function () {
+    Cal::$events = [ffEvento(['durationEditable' => false])];
+
+    $duracion = ffSave(Livewire::test(Cal::class), ffEditar(['end' => '2026-10-14 12:00:00']));
+    $inicio = ffSave(Livewire::test(Cal::class), ffEditar(['start' => '2026-10-14 10:30:00']));
+
+    expect(Cal::$updated)->toBe([])
+        ->and(ffMotivo($duracion))->toBe('Este evento no se puede editar')
+        ->and(ffMotivo($inicio))->toBe('Este evento no se puede editar');
+
+    // Mover con la misma duración sí.
+    ffSave(Livewire::test(Cal::class), ffEditar(['start' => '2026-10-14 12:00:00', 'end' => '2026-10-14 13:30:00']));
+
+    expect(Cal::$updated)->toHaveCount(1);
+});
+
+it('editar: resourceEditable(false) impide cambiar de recurso', function () {
+    Cal::$resources = [['id' => 10, 'title' => 'Sala A'], ['id' => 20, 'title' => 'Sala B']];
+    Cal::$config = ['interaction.resource_editable' => false];
+    Cal::$events = [ffEvento(['resourceIds' => [10]])];
+
+    $cambiar = ffSave(Livewire::test(Cal::class), ffEditar(['resourceId' => '20']));
+    $quitar = ffSave(Livewire::test(Cal::class), ffEditar(['resourceId' => null]));
+
+    expect(Cal::$updated)->toBe([])
+        ->and(ffMotivo($cambiar))->toBe('Este evento no se puede cambiar de recurso')
+        ->and(ffMotivo($quitar))->toBe('Este evento no se puede cambiar de recurso');
+
+    // Quedarse donde estaba, sí.
+    ffSave(Livewire::test(Cal::class), ffEditar(['resourceId' => '10', 'title' => 'Misma sala']));
+
+    expect(Cal::$updated)->toHaveCount(1);
+});
+
+it('editar: eventConstraint(businessHours) rechaza dejar el evento fuera de horario', function () {
+    Cal::$config = ['business_hours' => true, 'interaction.event_constraint' => 'businessHours'];
+    Cal::$events = [ffEvento()];
+
+    $madrugada = ffSave(Livewire::test(Cal::class), ffEditar(['start' => '2026-10-14 03:00:00', 'end' => '2026-10-14 04:30:00']));
+    $domingo = ffSave(Livewire::test(Cal::class), ffEditar(['start' => '2026-10-18 10:00:00', 'end' => '2026-10-18 11:30:00']));
+    $alargado = ffSave(Livewire::test(Cal::class), ffEditar(['end' => '2026-10-14 18:00:00']));
+
+    expect(Cal::$updated)->toBe([])
+        ->and(ffToast($madrugada))->toMatchArray(['title' => 'No se pudo guardar el evento', 'description' => 'Fuera del horario laboral'])
+        ->and(ffMotivo($domingo))->toBe('Fuera del horario laboral')
+        ->and(ffMotivo($alargado))->toBe('Fuera del horario laboral');
+
+    ffSave(Livewire::test(Cal::class), ffEditar(['start' => '2026-10-14 13:00:00', 'end' => '2026-10-14 14:30:00']));
+
+    expect(Cal::$updated)->toHaveCount(1);
+});
+
+it('editar: un evento que ya estaba fuera de horario se puede renombrar sin moverlo', function () {
+    Cal::$config = ['business_hours' => true, 'interaction.event_constraint' => 'businessHours'];
+    Cal::$events = [ffEvento(['start' => '2026-10-14 20:00', 'end' => '2026-10-14 21:00'])];
+
+    ffSave(Livewire::test(Cal::class), ffEditar(['title' => 'Cena', 'start' => '2026-10-14 20:00:00', 'end' => '2026-10-14 21:00:00']));
+
+    expect(Cal::$updated)->toHaveCount(1);
+});
+
+it('editar: eventOverlap(false) rechaza solapar otro evento, y overlap false de otro lo impide siempre', function () {
+    Cal::$events = [ffEvento(), ffEvento(['id' => 4, 'title' => 'Otro', 'start' => '2026-10-14 14:00', 'end' => '2026-10-14 15:00']), InteractiveCalendar::defaultEvents()[2]];
+
+    // Con solapes permitidos (lo normal), solo el `overlap: false` de «Bloqueo» (vie 16, 15:00) bloquea.
+    $libre = ffSave(Livewire::test(Cal::class), ffEditar(['start' => '2026-10-14 14:30:00', 'end' => '2026-10-14 15:30:00']));
+    $bloqueo = ffSave(Livewire::test(Cal::class)->set('date', '2026-10-14'), ffEditar(['start' => '2026-10-16 15:15:00', 'end' => '2026-10-16 15:45:00']));
+
+    expect(Cal::$updated)->toHaveCount(1)
+        ->and(ffMotivo($libre))->toBeNull()
+        ->and(ffToast($bloqueo))->toMatchArray(['title' => 'No se pudo guardar el evento', 'description' => 'Se solapa con «Bloqueo»']);
+
+    // Con eventOverlap(false), cualquiera.
+    Cal::$updated = [];
+    Cal::$config = ['interaction.event_overlap' => false];
+
+    $estricto = ffSave(Livewire::test(Cal::class), ffEditar(['start' => '2026-10-14 14:30:00', 'end' => '2026-10-14 15:30:00']));
+
+    expect(Cal::$updated)->toBe([])
+        ->and(ffMotivo($estricto))->toBe('Se solapa con «Otro»');
+
+    // Y pegado, sin pisar, vale.
+    ffSave(Livewire::test(Cal::class), ffEditar(['start' => '2026-10-14 15:00:00', 'end' => '2026-10-14 16:00:00']));
+
+    expect(Cal::$updated)->toHaveCount(1);
+});
+
+it('editar: el overlap false de un evento que no se dibuja no revela su título', function () {
+    Cal::$events = [ffEvento(), ffEvento(['id' => 4, 'title' => 'TITULO-PRIVADO', 'start' => '2026-10-14 14:00', 'end' => '2026-10-14 15:00', 'display' => 'none', 'overlap' => false])];
+
+    $t = ffSave(Livewire::test(Cal::class), ffEditar(['start' => '2026-10-14 14:30:00', 'end' => '2026-10-14 15:30:00']));
+
+    expect(Cal::$updated)->toBe([])
+        ->and(ffMotivo($t))->not->toBeNull()
+        ->and(ffMotivo($t))->not->toContain('TITULO-PRIVADO');
+});
+
+it('editar: una ocurrencia que no cabe en el horario se rechaza antes de preguntar el alcance', function () {
+    Cal::$config = ['business_hours' => true, 'interaction.event_constraint' => 'businessHours'];
+    Cal::$events = [['id' => 1, 'title' => 'Diaria', 'start' => '2026-10-12 10:00', 'end' => '2026-10-12 11:00', 'rrule' => 'FREQ=DAILY;COUNT=5']];
+
+    $instancia = '1:'.Marker::parse('2026-10-14 10:00:00')->ts;
+    $t = ffSave(Livewire::test(Cal::class), ffEdit(['title' => 'Diaria', 'instanceId' => $instancia, 'start' => '2026-10-14 03:00:00', 'end' => '2026-10-14 04:00:00']));
+
+    expect(Cal::$updated)->toBe([])
+        ->and(ffMotivo($t))->toBe('Fuera del horario laboral')
+        ->and($t->get('koreRecurrencePending'))->toBeNull();
+});
+
+it('crear: selectConstraint(businessHours) rechaza un evento fuera de horario', function () {
+    Cal::$config = ['business_hours' => true, 'interaction.select_constraint' => 'businessHours'];
+
+    $noche = ffSave(Livewire::test(Cal::class), ffCreate(['start' => '2026-10-15 02:00:00', 'end' => '2026-10-15 03:00:00']));
+
+    expect(Cal::$created)->toBe([])
+        ->and(ffToast($noche))->toMatchArray(['title' => 'No se pudo crear el evento', 'description' => 'Fuera del horario laboral']);
+
+    ffSave(Livewire::test(Cal::class), ffCreate());
+
+    expect(Cal::$created)->toHaveCount(1);
+});
+
+it('crear: el horario de su recurso gana al del calendario', function () {
+    Cal::$resources = [['id' => 10, 'title' => 'Sala A', 'businessHours' => ['daysOfWeek' => [1, 2, 3, 4, 5], 'startTime' => '09:00', 'endTime' => '12:00']]];
+    Cal::$config = ['interaction.select_constraint' => 'businessHours'];
+
+    $tarde = ffSave(Livewire::test(Cal::class), ffCreate(['resourceId' => '10', 'start' => '2026-10-15 14:00:00', 'end' => '2026-10-15 15:00:00']));
+
+    expect(Cal::$created)->toBe([])
+        ->and(ffMotivo($tarde))->toBe('Fuera del horario de Sala A');
+
+    ffSave(Livewire::test(Cal::class), ffCreate(['resourceId' => '10', 'start' => '2026-10-15 10:00:00', 'end' => '2026-10-15 11:00:00']));
+
+    expect(Cal::$created)->toHaveCount(1);
+});
+
+it('crear: selectOverlap(false) rechaza pisar un evento', function () {
+    Cal::$config = ['interaction.select_overlap' => false];
+    Cal::$events = [ffEvento()];
+
+    $pisa = ffSave(Livewire::test(Cal::class), ffCreate(['start' => '2026-10-14 11:00:00', 'end' => '2026-10-14 12:00:00']));
+
+    expect(Cal::$created)->toBe([])
+        ->and(ffToast($pisa))->toMatchArray(['title' => 'No se pudo crear el evento', 'description' => 'Se solapa con «Revisión»']);
+
+    // Pegado al final del otro (las 11:30), no.
+    ffSave(Livewire::test(Cal::class), ffCreate(['start' => '2026-10-14 11:30:00', 'end' => '2026-10-14 12:30:00']));
+
+    expect(Cal::$created)->toHaveCount(1);
+});
+
+it('crear: sin selectOverlap(false) se puede crear encima de otro evento', function () {
+    Cal::$events = [ffEvento()];
+
+    ffSave(Livewire::test(Cal::class), ffCreate(['start' => '2026-10-14 11:00:00', 'end' => '2026-10-14 12:00:00']));
+
+    expect(Cal::$created)->toHaveCount(1);
+});
+
+it('crear: validRange acota donde se puede crear', function () {
+    Cal::$config = ['interaction.valid_range' => ['start' => '2026-10-12', 'end' => '2026-10-18']];
+
+    $fuera = ffSave(Livewire::test(Cal::class), ffCreate(['start' => '2026-11-02 10:00:00', 'end' => '2026-11-02 11:00:00']));
+
+    expect(Cal::$created)->toBe([])
+        ->and(ffMotivo($fuera))->toBe('Fuera del rango permitido');
+});
+
+it('crear: un año lejano queda fuera de la ventana por defecto', function () {
+    $lejos = ffSave(Livewire::test(Cal::class), ffCreate(['start' => '3000-01-01 10:00:00', 'end' => '3000-01-01 11:00:00']));
+
+    expect(Cal::$created)->toBe([])
+        ->and(ffMotivo($lejos))->toBe('Fuera del rango permitido');
+});
+
+it('eliminar: pide que el evento sea editable, o el calendario si el evento no dice nada', function () {
+    Cal::$config = ['interaction.editable' => false];
+    Cal::$events = [ffEvento(), ffEvento(['id' => 2, 'title' => 'Con permiso', 'editable' => true])];
+
+    $cerrado = ffSave(Livewire::test(Cal::class), ['mode' => 'delete', 'id' => 1]);
+
+    expect(Cal::$deleted)->toBe([])
+        ->and(ffToast($cerrado))->toMatchArray(['type' => 'error', 'title' => 'No se pudo eliminar el evento', 'description' => 'Este evento no se puede editar']);
+
+    // El evento manda sobre el calendario, también aquí.
+    ffSave(Livewire::test(Cal::class), ['mode' => 'delete', 'id' => 2]);
+
+    expect(Cal::$deleted)->toHaveCount(1)->and(Cal::$deleted[0][0]->id)->toBe(2);
+});
+
+it('eliminar: startEditable y durationEditable hablan de las fechas, no de si el evento existe', function () {
+    Cal::$events = [ffEvento(['startEditable' => false, 'durationEditable' => false])];
+
+    ffSave(Livewire::test(Cal::class), ['mode' => 'delete', 'id' => 1]);
+
+    expect(Cal::$deleted)->toHaveCount(1);
+});
+
+it('eliminar: editable false en el evento sigue mandando aunque el calendario sea editable', function () {
+    Cal::$events = [ffEvento(['editable' => false])];
+
+    $t = ffSave(Livewire::test(Cal::class), ['mode' => 'delete', 'id' => 1]);
+
+    expect(Cal::$deleted)->toBe([])
+        ->and(ffMotivo($t))->toBe('Este evento no se puede editar');
 });

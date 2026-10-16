@@ -229,6 +229,72 @@ final class MutationBuilder
         );
     }
 
+    // ── Formulario de evento ────────────────────────────────────────────
+
+    /**
+     * Lo que escribió el usuario en el formulario al editar, como la mutación que
+     * habría sido arrastrarlo: así se valida con las mismas reglas (`MutationValidator::validateEdit()`).
+     *
+     * A diferencia de un arrastre, aquí no hay snap: el usuario escribió la hora
+     * que quiso. El fin que falta (`null`) es el de por defecto de la modalidad, el
+     * mismo que le pone el normalizador, para que un evento sin fin al que no se le toca
+     * nada no cuente como cambiado.
+     *
+     * @param  Marker  $start  Hora de pared del inicio (con `$allDay`, el día).
+     * @param  Marker|null  $end  Hora de pared del fin, exclusivo. `null` si el formulario no lo trae.
+     * @param  list<string|int>  $resourceIds  Los recursos resultantes.
+     */
+    public function edit(EventInstance $original, Marker $start, ?Marker $end, bool $allDay, array $resourceIds): EventMutation
+    {
+        [$startMarker, $startInstant, $endMarker, $endInstant] = $this->formRange($start, $end, $allDay);
+
+        return $this->mutation(
+            $original, $allDay, $startMarker, $startInstant, $endMarker, $endInstant, $end !== null,
+            $resourceIds, $startMarker->ts - $original->range->start->ts,
+        );
+    }
+
+    /**
+     * Lo que escribió el usuario en el formulario de un evento nuevo, como la selección
+     * que habría sido arrastrarla (`MutationValidator::validateSelectionRules()`).
+     */
+    public function draft(Marker $start, ?Marker $end, bool $allDay, string|int|null $resourceId = null): Selection
+    {
+        [$startMarker, $startInstant, $endMarker, $endInstant] = $this->formRange($start, $end, $allDay);
+
+        return new Selection($startInstant, $endInstant, $startMarker, $endMarker, $allDay, $resourceId);
+    }
+
+    /**
+     * El inicio y el fin efectivos de lo que llega del formulario, en marker e instante.
+     *
+     * @return array{0: Marker, 1: CarbonImmutable, 2: Marker, 3: CarbonImmutable}
+     */
+    private function formRange(Marker $start, ?Marker $end, bool $allDay): array
+    {
+        if ($allDay) {
+            $startMarker = $start->startOfDay();
+            $endMarker = $end?->startOfDay();
+
+            if ($endMarker === null || $endMarker->ts <= $startMarker->ts) {
+                $endMarker = $startMarker->addDays($this->defaultAllDayDays);
+            }
+
+            return [$startMarker, $this->clock->toInstant($startMarker), $endMarker, $this->clock->toInstant($endMarker)];
+        }
+
+        $startInstant = $this->clock->toInstant($start);
+        $startMarker = $this->clock->toMarker($startInstant);
+        $endInstant = $end === null ? null : $this->clock->toInstant($end);
+
+        // Sin fin, o con un fin que no queda después del inicio: la duración por defecto.
+        if ($endInstant === null || $endInstant->getTimestamp() <= $startInstant->getTimestamp()) {
+            $endInstant = $this->plus($startInstant, $this->defaultTimedSeconds);
+        }
+
+        return [$startMarker, $startInstant, $this->endMarker($startMarker, $startInstant, $endInstant), $endInstant];
+    }
+
     // ── Recursos ────────────────────────────────────────────────────────
 
     /**

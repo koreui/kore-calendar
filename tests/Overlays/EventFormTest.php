@@ -1,8 +1,10 @@
 <?php
 
+use KoreUi\Calendar\Interaction\EventFormPayload;
 use KoreUi\Calendar\Overlays\EventForm;
 use KoreUi\Overlay\OverlayManager;
 use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
+use Livewire\Exceptions\MethodNotFoundException;
 use Livewire\Livewire;
 
 /*
@@ -134,6 +136,46 @@ it('ofrece los trece colores traducidos, y el suyo si no es de la lista', functi
         ->assertSee('#ff8800')
         ->assertSet('color', '#ff8800');
 });
+
+/** Las opciones del selector de color, tal como viajan en el JSON de la página. */
+function efOpcionesDeColor($t): array
+{
+    preg_match_all('#<script type="application/json"[^>]*>(.*?)</script>#s', $t->html(), $m);
+
+    foreach ($m[1] as $json) {
+        if (str_contains($json, 'Primario')) {
+            return json_decode($json, true);
+        }
+    }
+
+    return [];
+}
+
+it('un color propio válido se ofrece con una etiqueta fija, nunca con su valor', function (string $color) {
+    $opciones = efOpcionesDeColor(Livewire::test(EventForm::class, efArgs(['mode' => 'edit', 'eventId' => 1, 'color' => $color])));
+
+    // La primera opción es la suya: se puede elegir (y guardar sin borrarla), pero el nombre no es el valor.
+    expect($opciones[0])->toBe(['value' => $color, 'label' => 'Personalizado'])
+        ->and(array_column($opciones, 'value'))->toContain('primary');
+})->with(['hex' => ['#ff8800'], 'rgb' => ['rgb(255 136 0 / 50%)'], 'nombre' => ['rebeccapurple'], 'oklch' => ['oklch(0.7 0.15 50)'], 'token fuera de la lista' => ['muted']]);
+
+it('un color propio que no es un color CSS no se ofrece ni se pinta en la página', function (string $color) {
+    $t = Livewire::test(EventForm::class, efArgs(['mode' => 'edit', 'eventId' => 1, 'color' => $color]));
+    $opciones = efOpcionesDeColor($t);
+
+    // kore-ui pega ese JSON sin escapar en la página: un `<!--` o un `</script>` en él la rompería.
+    expect(json_encode($opciones))->not->toContain('script')->and(json_encode($opciones))->not->toContain('onerror')
+        ->and(array_column($opciones, 'value'))->not->toContain($color)
+        ->and(array_column($opciones, 'label'))->not->toContain($color)
+        ->and($opciones)->toHaveCount(count(EventFormPayload::COLORS))
+        ->and($t->html())->not->toContain('<!--<script>')->not->toContain('<img src=x');
+})->with([
+    'comentario' => ['<!--<script>'],
+    'cierre de script' => ['</script><img src=x onerror=alert(1)>'],
+    'atributo' => ['"><img src=x onerror=alert(2)>'],
+    'declaración extra' => ['red; background: url(x)'],
+    'url' => ['url(javascript:alert(1))'],
+]);
 
 it('los selectores de hora se esconden con el estado del navegador, sin ir al servidor', function () {
     // `$wire.allDay`: el servidor no tiene que pintar de nuevo para que el interruptor funcione.
@@ -435,12 +477,26 @@ it('al confirmar devuelve mode delete con el id y cierra todo', function () {
 });
 
 it('crear no tiene nada que eliminar', function () {
-    Livewire::test(EventForm::class, efArgs())
+    $t = Livewire::test(EventForm::class, efArgs())
         ->call('delete')
-        ->assertNotDispatched('kore:open')
-        ->call('confirmDelete')
+        ->assertNotDispatched('kore:open');
+
+    // Ni siquiera con un aviso de confirmación forjado: no hay nada autorizado.
+    $t->dispatch('kore:confirm-callback', method: 'confirmDelete', params: [], callerRef: $t->id())
         ->assertNotDispatched(EventForm::SAVED)
         ->assertNotDispatched('kore:close');
+});
+
+it('confirmDelete no se puede llamar desde el navegador: solo lo lanza el diálogo de confirmación', function () {
+    $t = Livewire::test(EventForm::class, efArgs(['mode' => 'edit', 'eventId' => 7, 'title' => 'Revisión']));
+
+    // Sin pasar por `delete()` (que abre el diálogo y autoriza el callback), eliminar no es posible.
+    expect(fn () => $t->call('confirmDelete'))->toThrow(MethodNotFoundException::class);
+    $t->assertNotDispatched(EventForm::SAVED);
+
+    // Y un aviso de confirmación que no salió de `delete()` tampoco lo ejecuta.
+    $t->dispatch('kore:confirm-callback', method: 'confirmDelete', params: [], callerRef: $t->id())
+        ->assertNotDispatched(EventForm::SAVED);
 });
 
 it('cancelar cierra sin devolver nada', function () {

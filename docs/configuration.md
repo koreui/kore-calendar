@@ -35,6 +35,7 @@ Las claves anidadas se escriben con puntos (`time.slot_duration`), igual que en 
 | `locale` | `?string` | `null` | Idioma de los textos **y** de las fechas: `en` o `es` (una variante como `es_MX` o `en_GB` cuenta como su idioma base). `null` = `app()->getLocale()`. Ver [Idioma](#idioma-y-traducciones) |
 | `fallback_locale` | `string` | `'en'` | Idioma que se usa cuando el pedido no es `en` ni `es` (una aplicación en francés, por ejemplo) |
 | `default_view` | `string` | `'month'` | Vista inicial de `KoreCalendar` y de `<x-kore::calendar>` cuando la URL no trae `?view=` (o no es una de las disponibles) ni la etiqueta una `view`. Si ella tampoco está disponible (no está en `views`, o es de recursos y no hay recursos), la primera de `views`: ver la nota debajo |
+| `mobile_view` | `?string` | `null` | Vista para pantallas estrechas (`max-width: 640px`), p. ej. `'day'` o `'list'`. Solo en la **primera carga sin `?view=`** en la URL; la elección explícita del usuario manda siempre. Se valida contra las vistas disponibles (una que no está en `views`, o de recursos sin recursos, se ignora). Ver [Pantallas estrechas](#pantallas-estrechas) |
 | `views` | `list<string>` | las nueve | Vistas del selector y únicas que acepta `?view=`. Posibles: `month`, `week`, `day`, `list`, `resource-week`, `resource-day`, `timeline-day`, `timeline-week`, `timeline-month`. Las cinco últimas solo se ofrecen si el calendario tiene recursos |
 | `timezone` | `?string` | `null` | Zona de la vista. `null` = `config('app.timezone')` (o `UTC` si no hay) |
 | `first_day` | `?int` | `null` | Primer día de la semana, `0` = domingo … `6` = sábado. `null` = `kore-ui.form.datepicker.start_of_week` (`1` si esa clave no existe) |
@@ -110,7 +111,7 @@ Todo apagado por defecto: un calendario es de solo lectura hasta que su clase lo
 | `interaction.all_day_maintain_duration` | `bool` | `false` | Al pasar de día completo a con hora (o al revés) se conserva la duración en vez de usar la de por defecto |
 | `interaction.resource_editable` | `bool` | `true` | Se puede cambiar un evento de recurso arrastrándolo |
 | `interaction.event_click` | `bool` | `false` | Los eventos se pueden pulsar (`onEventClick()`). `KoreCalendar` lo activa solo con `eventForm()` o si se sobrescribe `onEventClick()` |
-| `interaction.valid_range` | `array` | `['start' => null, 'end' => null]` | Límites de lo editable, `YYYY-MM-DD`. El `end` incluye ese día. Un extremo `null` queda abierto |
+| `interaction.valid_range` | `array` | `['start' => null, 'end' => null]` | Límites de lo editable, `YYYY-MM-DD`. El `end` incluye ese día. Sin límite, o con un extremo `null`, el servidor acepta ±200 años alrededor de hoy (`Bounds::window()`); escribe los dos extremos para ampliarlo |
 
 ### `formats`
 
@@ -129,6 +130,33 @@ Patrones de `isoFormat` de Carbon, que se adaptan al idioma del calendario (`loc
 | `formats.time` | `'LT'` | Toda hora: eventos, eje horario y ranuras del timeline |
 
 Los formatos solo se cambian en el config o, en una clase, con `$this->set('formats', ['title_month' => 'MMM YYYY'])`; una clave suelta (`formats.title_month`) no funciona con `set()`.
+
+### Pantallas estrechas
+
+La barra, el mes y el timeline se adaptan a su propio ancho con container queries de CSS, sin JavaScript: no hay nada que configurar y funciona igual en un móvil que en un panel lateral. Lo que sí se configura es `mobile_view`.
+
+| Ancho del contenedor | Qué cambia |
+|---|---|
+| Barra: menos de `42rem` | Las vistas pasan de botones a un `<select>` nativo con la etiqueta `views`. En modo enlaces navega a la misma URL que el botón (con el resto de la consulta conservado); en `KoreCalendar` llama a `changeView`. El título va en su propia línea y hace wrap |
+| Mes: menos de `40rem` | Un evento con hora se queda en el punto de color, y las barras pierden la hora. El título sigue en el DOM (recortado) para los lectores de pantalla y sale entero en la ventana del «+N más» |
+| Timeline: menos de `40rem` | La columna de recursos pasa de `--kore-calendar-resource-width` a `--kore-calendar-resource-width-narrow`; un nombre que no cabe se trunca y lleva `title` |
+
+**`mobile_view`** abre otra vista en una pantalla estrecha la primera vez. El servidor no sabe el ancho de la pantalla, así que lo hace el cliente al iniciar (`KoreCalendarMobileView`): si `matchMedia('(max-width: 640px)')` coincide, la URL no trae el parámetro de vista y la vista pintada no es ya la móvil, cambia a ella, **una sola vez**.
+
+- Modo Livewire (`KoreCalendar`): `$wire.changeView(vista)`; la URL pasa a llevar `?view=` sin añadir una entrada al historial.
+- Modo enlaces (`<x-kore::calendar>`): `location.replace` a la misma URL con `?view=` (con el nombre de `view-param`).
+- **Provoca un render extra la primera vez**: el servidor pinta la vista normal, el cliente la cambia (una petición a Livewire, o una recarga de la página). Quien llega a una URL con `?view=` no lo paga.
+- Respeta la elección explícita: con `?view=` en la URL —un enlace, una recarga después de elegir una vista, el selector de la barra— no hace nada. No hay bucle: tras el cambio la URL ya lleva `?view=`.
+- Solo se decide al cargar: girar el móvil o redimensionar la ventana después no cambia de vista.
+- Con `:toolbar="false"` no se aplica: sin barra, la URL se ignora.
+
+```php
+$this->mobileView('day');            // en configure()
+```
+
+```blade
+<x-kore::calendar mobile-view="list" />
+```
 
 ## Métodos de `configure()`
 
@@ -149,6 +177,7 @@ public function configure(): void
 |---|---|---|
 | `views(array)` | `views` | Solo para este calendario |
 | `defaultView(string)` | `default_view` | |
+| `mobileView(?string)` | `mobile_view` | `null` quita la del config. Ver [Pantallas estrechas](#pantallas-estrechas) |
 | `timezone(string)` | `timezone` | |
 | `locale(string)` | `locale` | `'en'` o `'es'`. Cambia los textos y las fechas de este calendario |
 | `firstDay(int)` | `first_day` | |
@@ -170,7 +199,7 @@ public function configure(): void
 | `selectOverlap(bool = true)` | `interaction.select_overlap` | |
 | `allDayMaintainDuration(bool = true)` | `interaction.all_day_maintain_duration` | |
 | `resourceEditable(bool = true)` | `interaction.resource_editable` | |
-| `validRange(?string $start, ?string $end)` | `interaction.valid_range` | Un extremo `null` queda abierto; con los dos `null` quita el límite del config |
+| `validRange(?string $start, ?string $end)` | `interaction.valid_range` | Un extremo `null` cae a la ventana de ±200 años; con los dos `null` quita el límite del config |
 | `eventClick(bool = true)` | `interaction.event_click` | `false` lo apaga aunque haya `eventForm()` |
 | `eventForm(bool = true)` | — | No es una clave del config: activa el formulario de crear y editar |
 | `undoable(bool = true)` | — | No es una clave del config: ofrece «Deshacer» tras mover o redimensionar |
@@ -202,6 +231,7 @@ Las props llevan el nombre de la clave del config (en kebab-case) y ganan sobre 
 | `business-hours` | `bool\|array` | config `business_hours` | Horario laboral |
 | `highlight-conflicts` | `bool` | config `highlight_conflicts` | Marcar solapes |
 | `toolbar` | `bool` | `true` | Barra con navegación y selector de vista. Sin ella, `?date=` y `?view=` se ignoran |
+| `mobile-view` | `?string` | config `mobile_view` | Vista para pantallas estrechas en la primera carga sin `?view=`. `false` apaga la del config. Solo con la barra activa |
 | `date-param` | `string` | `'date'` | Nombre del parámetro de la URL para la fecha |
 | `view-param` | `string` | `'view'` | Nombre del parámetro de la URL para la vista |
 | `calendar` | `RenderedCalendar` | `null` | Interna: `KoreCalendar` pasa aquí su calendario ya montado. No se usa a mano |
@@ -252,7 +282,7 @@ Los marcadores `:nombre` se sustituyen por texto plano al mostrarse. En las tabl
 | `week_number` | `:number` | Texto para lectores de pantalla de cada fila de semana |
 | `no_events` | | Agenda sin eventos |
 | `previous`, `next`, `today` | | Botones de la barra |
-| `views` | | Nombre accesible del grupo de botones de vista |
+| `views` | | Nombre accesible del grupo de botones de vista y del selector de vista (`<select>`) de las pantallas estrechas |
 | `view_month`, `view_week`, `view_day`, `view_list`, `view_resource-week`, `view_resource-day`, `view_timeline-day`, `view_timeline-week`, `view_timeline-month` | | Botón de cada vista. Si añades una vista, falta su `view_*` |
 | `resources` | | Cabecera de la columna de recursos del timeline |
 | `toggle_group` | `:group` | Nombre accesible del botón que pliega un grupo del timeline |

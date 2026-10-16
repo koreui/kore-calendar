@@ -28,6 +28,15 @@ final class Editability
         return $event->durationEditable ?? $event->editable ?? $settings->editable;
     }
 
+    /**
+     * Eliminar (desde el formulario). Solo cuenta `editable`: `startEditable` y
+     * `durationEditable` hablan de las fechas, no de si el evento existe.
+     */
+    public static function canDelete(CalendarEvent $event, CalendarSettings $settings): bool
+    {
+        return $event->editable ?? $settings->editable;
+    }
+
     /** Cambiar de recurso: es mover, y además el calendario tiene que permitirlo. */
     public static function canChangeResource(CalendarEvent $event, CalendarSettings $settings): bool
     {

@@ -24,6 +24,9 @@ final readonly class CalendarEvent
 {
     public const DISPLAYS = ['auto', 'block', 'list-item', 'background', 'none'];
 
+    /** Los esquemas que puede tener la `url` de un evento (acaba en un `href`). Las relativas también valen. */
+    public const URL_SCHEMES = ['http', 'https', 'mailto', 'tel'];
+
     /** Claves que acepta `fromArray()`, además del atajo `resourceId`. Un test las compara con el constructor. */
     public const KEYS = [
         'id', 'title', 'start', 'end', 'allDay', 'resourceIds', 'groupId', 'color', 'url',
@@ -91,6 +94,10 @@ final readonly class CalendarEvent
             throw new InvalidArgumentException("Evento «{$id}»: `groupId` está vacío. Usa null si el evento no tiene grupo.");
         }
 
+        if ($url !== null) {
+            self::checkUrl($id, $url);
+        }
+
         $this->resourceIds = self::cleanResourceIds($id, $resourceIds);
 
         self::checkRecurrence($id, $rrule, $exdates, $recurrenceOf, $recurrenceId);
@@ -119,6 +126,39 @@ final readonly class CalendarEvent
     public function isOverride(): bool
     {
         return $this->recurrenceOf !== null;
+    }
+
+    /**
+     * La `url` va a un `<a href>`: un `javascript:` o un `data:` ejecutaría código en el
+     * origen de la aplicación al pulsarlo, y los datos de un evento pueden venir de un
+     * `.ics` ajeno o de un campo que el usuario escribió. Solo se aceptan las URL
+     * relativas (`/reunion/5`, `?id=5`, `#x`, `reunion/5`) y las de `URL_SCHEMES`.
+     *
+     * El esquema se busca como lo hace el navegador al resolver un `href`: sin mirar
+     * mayúsculas ni los espacios y caracteres de control del principio, y sin los
+     * tabuladores y saltos de línea de en medio (`java\tscript:` ES `javascript:`). Para no
+     * depender de cuáles quita cada navegador, aquí se descartan todos los caracteres de
+     * control y los espacios de antes del esquema.
+     *
+     * `//otro.example` (relativa al protocolo) se permite: lleva a otro sitio, pero no más
+     * que `https://otro.example`, que es válida, y no puede ejecutar nada.
+     */
+    private static function checkUrl(string|int $id, string $url): void
+    {
+        $probe = ltrim(preg_replace('/[\x00-\x1F\x7F]+/', '', $url) ?? '');
+
+        if (! preg_match('/^([a-z][a-z0-9+.\-]*):/i', $probe, $m)) {
+            return;
+        }
+
+        if (! in_array(strtolower($m[1]), self::URL_SCHEMES, true)) {
+            throw new InvalidArgumentException(sprintf(
+                'Evento «%s»: la `url` usa el esquema «%s:», que no se admite (acaba en un enlace). Solo URL relativas o con esquema %s.',
+                $id,
+                strtolower($m[1]),
+                implode(', ', self::URL_SCHEMES),
+            ));
+        }
     }
 
     /**

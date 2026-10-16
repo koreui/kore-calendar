@@ -7,6 +7,15 @@
 
     Las props llevan el mismo nombre que la configuración (config/kore-calendar.php)
     y ganan sobre ella.
+
+    `mobile-view`: la vista que se abre, en la PRIMERA carga sin ?view= en la URL, si la pantalla
+    es estrecha (max-width: 640px). El servidor no sabe el ancho, así que lo hace el cliente
+    (KoreCalendarMobileView) al iniciar: provoca un render extra la primera vez. Solo cuenta si
+    es una de las vistas del selector y la barra está activa (sin barra la URL se ignora).
+
+    w-full: la barra, el mes y el timeline son contenedores de CSS (inline-size), y un contenedor
+    no toma su ancho de lo que lleva dentro. En un `flex` sin ancho propio el calendario se
+    quedaba en 2 px; con w-full llena el hueco y se encoge si hace falta.
 --}}
 @props([
     'events' => [],
@@ -29,6 +38,7 @@
     'toolbar' => true,
     'dateParam' => 'date',
     'viewParam' => 'view',
+    'mobileView' => null,
     'calendar' => null,
     'mode' => 'links',
 ])
@@ -56,7 +66,7 @@
                 // `default_view`, y por último la primera del selector. Como en KoreCalendar,
                 // una vista que el selector no ofrece no cuenta.
                 'view' => \KoreUi\Calendar\View\CalendarViews::initial([$requestedView, $view, config('kore-calendar.default_view')], $available),
-                'date' => is_string($requestedDate) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $requestedDate) ? $requestedDate : $date,
+                'date' => \KoreUi\Calendar\Interaction\Bounds::acceptsDate($requestedDate) ? $requestedDate : $date,
                 'timezone' => $timezone,
                 'locale' => $locale,
                 'first_day' => $firstDay,
@@ -79,9 +89,32 @@
     }
 
     $vista = \KoreUi\Calendar\View\CalendarViews::component($calendar->settings->view);
+
+    // Prop > config, y como la vista inicial: solo cuenta si el selector la ofrece. `false` la apaga
+    // aunque el config tenga una (así la pasa KoreCalendar cuando no hay ninguna).
+    $mobile = $toolbar
+        ? \KoreUi\Calendar\View\CalendarViews::mobile($mobileView ?? config('kore-calendar.mobile_view'), $available)
+        : null;
 @endphp
 
-<div {{ $attributes->class('kore-calendar space-y-3') }}>
+@if ($mobile !== null)
+    @assets
+        <script src="{{ \KoreUi\Calendar\KoreCalendarServiceProvider::scriptUrl() }}" defer></script>
+    @endassets
+@endif
+
+<div
+    @if ($mobile !== null)
+        x-data="KoreCalendarMobileView({{ Js::from([
+            'view' => $mobile,
+            // La vista con la que el servidor pintó esta página: si ya es la móvil, no hay nada que cambiar.
+            'current' => $calendar->settings->view,
+            'param' => $viewParam,
+            'live' => $mode === 'livewire',
+        ]) }})"
+    @endif
+    {{ $attributes->class('kore-calendar w-full space-y-3') }}
+>
     @if ($toolbar)
         <x-kore::calendar.toolbar :calendar="$calendar" :views="$available" :mode="$mode" :date-param="$dateParam" :view-param="$viewParam" />
     @endif

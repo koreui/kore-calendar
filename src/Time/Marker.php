@@ -37,6 +37,13 @@ final class Marker implements Stringable
 
     public static function of(int $year, int $month, int $day, int $hour = 0, int $minute = 0, int $second = 0): self
     {
+        // `gmmktime` lee los años 0-100 como de dos cifras (1 → 2001, 70 → 1970): `0001-01-01`, el
+        // primer día que el paquete admite (`Bounds::MIN`), saldría como 2001. Para esos años se
+        // construye con `DateTimeImmutable`, que los toma tal cual. Normaliza igual que `gmmktime`.
+        if ($year >= 0 && $year <= 100) {
+            return new self((new \DateTimeImmutable('@0'))->setDate($year, $month, $day)->setTime($hour, $minute, $second)->getTimestamp());
+        }
+
         return new self(gmmktime($hour, $minute, $second, $month, $day, $year));
     }
 

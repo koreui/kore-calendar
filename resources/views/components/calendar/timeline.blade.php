@@ -10,6 +10,10 @@
     arriba y abajo ocupan el alto estimado del resto, y KoreCalendarTimeline pide
     al servidor la ventana nueva al hacer scroll (solo dentro de KoreCalendar).
 
+    Ancho: por debajo de 40 rem la columna de recursos pasa a --kore-calendar-resource-width-narrow
+    (container query en kore-calendar.css). Un nombre que no cabe se trunca y lleva `title` con el
+    texto entero (el nombre accesible ya es el texto: el `title` es para el ratón).
+
     Horario laboral: lo no laborable de cada fila (el de su recurso, o el del
     calendario) son bloques decorativos en % del eje, aria-hidden. Los tramos
     laborables viajan en data-business para marcar la previsualización del cliente.
@@ -27,7 +31,9 @@
     $scrollTo = $daySlots ? 0 : ($layout->nowLeft ?? round($calendar->settings->timelineScrollTime / max(1, $layout->axisSeconds) * 100, 4));
     // Las filas miden todo el contenido (w-max): un sticky no sale de su caja, y con
     // filas del ancho visible la columna de recursos se iba con el scroll horizontal.
-    $template = 'var(--kore-calendar-resource-width) minmax(calc('.$slotCount.' * var(--kore-calendar-timeline-slot-min)), 1fr)';
+    // --kc-resource-col sale de kore-calendar.css: --kore-calendar-resource-width, o su variante
+    // -narrow cuando el timeline mide menos de 40 rem (container query).
+    $template = 'var(--kc-resource-col) minmax(calc('.$slotCount.' * var(--kore-calendar-timeline-slot-min)), 1fr)';
 @endphp
 
 @assets
@@ -40,7 +46,7 @@
     x-data="KoreCalendarTimeline({ live: {{ $virtual && $mode === 'livewire' ? 'true' : 'false' }}, scrollTo: {{ $scrollTo }} })"
     x-on:scroll.throttle.150ms="onScroll()"
     style="--kc-slots: {{ $slotCount }}"
-    {{ $attributes->class('kore-calendar-timeline max-h-[44rem] overflow-auto rounded-kore-lg border border-kore-border bg-kore-bg text-kore-fg') }}
+    {{ $attributes->class('kore-calendar-timeline w-full max-h-[44rem] overflow-auto rounded-kore-lg border border-kore-border bg-kore-bg text-kore-fg') }}
 >
     <div role="rowgroup" class="sticky top-0 z-30 bg-kore-bg">
         <div role="row" class="grid w-max min-w-full border-b border-kore-border" style="grid-template-columns: {{ $template }}">
@@ -89,11 +95,11 @@
                             x-on:click="collapsed[{{ Js::from($row['key']) }}] = ! collapsed[{{ Js::from($row['key']) }}]"
                             x-bind:aria-expanded="! collapsed[{{ Js::from($row['key']) }}]"
                             aria-label="{{ $calendar->text('toggle_group', ['group' => $row['label']]) }}"
-                            class="flex items-center gap-1.5 rounded-kore-sm px-1 text-xs font-semibold hover:bg-kore-muted focus-visible:outline-2 focus-visible:outline-kore-ring"
+                            class="kore-calendar-target flex max-w-full items-center gap-1.5 rounded-kore-sm px-1 text-xs font-semibold hover:bg-kore-muted focus-visible:outline-2 focus-visible:outline-kore-ring"
                         >
-                            <x-lucide-chevron-down class="size-3.5 transition-transform" x-bind:class="collapsed[{{ Js::from($row['key']) }}] && '-rotate-90'" aria-hidden="true" />
-                            {{ $row['label'] }}
-                            <span class="font-normal text-kore-muted-fg">{{ $row['count'] }}</span>
+                            <x-lucide-chevron-down class="size-3.5 shrink-0 transition-transform" x-bind:class="collapsed[{{ Js::from($row['key']) }}] && '-rotate-90'" aria-hidden="true" />
+                            <span class="min-w-0 truncate" title="{{ $row['label'] }}">{{ $row['label'] }}</span>
+                            <span class="shrink-0 font-normal text-kore-muted-fg">{{ $row['count'] }}</span>
                         </button>
                     </div>
                     <div role="cell" aria-hidden="true"></div>
@@ -110,7 +116,7 @@
                         @if ($row['resource']?->color)
                             <span class="kore-calendar-dot me-2 size-2 shrink-0 rounded-full" style="{{ \KoreUi\Calendar\View\EventColor::style($row['resource']->color) }}" aria-hidden="true"></span>
                         @endif
-                        <span class="truncate">{{ $row['resource']?->title ?? $calendar->title() }}</span>
+                        <span class="min-w-0 truncate" title="{{ $row['resource']?->title ?? $calendar->title() }}">{{ $row['resource']?->title ?? $calendar->title() }}</span>
                     </div>
 
                     <div

@@ -218,3 +218,57 @@ it('fromArray valida igual que el constructor', function () {
     expect(fn () => CalendarEvent::fromArray(['id' => 1, 'title' => 'x', 'start' => '2026-10-16', 'display' => 'punto']))
         ->toThrow(InvalidArgumentException::class, 'display «punto» no válido');
 });
+
+// ── url: va a un <a href> ────────────────────────────────────────────
+
+it('la url acepta las relativas y los esquemas http, https, mailto y tel', function (string $url) {
+    expect(CalendarEvent::make(id: 1, title: 'x', start: '2026-10-16', url: $url)->url)->toBe($url)
+        ->and(CalendarEvent::fromArray(['id' => 1, 'title' => 'x', 'start' => '2026-10-16', 'url' => $url])->url)->toBe($url);
+})->with([
+    'absoluta' => ['/reuniones/5'],
+    'relativa' => ['reuniones/5'],
+    'con dos puntos en el camino' => ['reuniones/5:30'],
+    'consulta' => ['?evento=5'],
+    'ancla' => ['#evento-5'],
+    'https' => ['https://example.com/reuniones/5'],
+    'http en mayúsculas' => ['HTTP://EXAMPLE.COM/a'],
+    'mailto' => ['mailto:equipo@example.com?subject=Hola'],
+    'tel' => ['tel:+34600000000'],
+    // Lleva a otro sitio, pero no más que `https://otro.example`, que ya es válida, y no ejecuta nada.
+    'relativa al protocolo' => ['//cdn.example.com/reunion'],
+    'con espacios alrededor' => ['  https://example.com/a  '],
+]);
+
+it('la url rechaza lo que ejecutaría código o no es un enlace, sin mirar mayúsculas ni caracteres invisibles', function (string $url, string $esquema) {
+    $hacer = fn () => CalendarEvent::make(id: 7, title: 'x', start: '2026-10-16', url: $url);
+
+    expect($hacer)->toThrow(InvalidArgumentException::class, "Evento «7»: la `url` usa el esquema «{$esquema}:»");
+})->with([
+    'javascript' => ['javascript:alert(1)', 'javascript'],
+    'mayúsculas mezcladas' => ['JaVaScRiPt:alert(1)', 'javascript'],
+    'con espacio delante' => [' JaVaScRiPt:alert(1)', 'javascript'],
+    'con tabulador en medio' => ["java\tscript:alert(1)", 'javascript'],
+    'con saltos de línea en medio' => ["java\r\nscript:alert(1)", 'javascript'],
+    'con un carácter de control delante' => ["\x01javascript:alert(1)", 'javascript'],
+    'con varios espacios y controles delante' => [" \t\n \x0Bjavascript:alert(1)", 'javascript'],
+    'con un nulo en medio' => ["java\0script:alert(1)", 'javascript'],
+    'data' => ['data:text/html,<script>alert(1)</script>', 'data'],
+    'data en base64' => ['data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==', 'data'],
+    'vbscript' => ['vbscript:msgbox(1)', 'vbscript'],
+    'file' => ['file:///etc/passwd', 'file'],
+    'ftp' => ['ftp://example.com/x', 'ftp'],
+    'esquema desconocido' => ['evento:5', 'evento'],
+]);
+
+it('la url también se valida al construir desde un array y en las ocurrencias de una serie', function () {
+    expect(fn () => CalendarEvent::fromArray(['id' => 1, 'title' => 'x', 'start' => '2026-10-16', 'url' => 'javascript:alert(1)']))
+        ->toThrow(InvalidArgumentException::class, 'la `url` usa el esquema');
+
+    $serie = CalendarEvent::make(id: 1, title: 'x', start: '2026-10-16 10:00', rrule: 'FREQ=DAILY', url: '/reuniones/1');
+
+    expect($serie->occurrence('2026-10-17 10:00', null)->url)->toBe('/reuniones/1');
+});
+
+it('sin url (null) no hay nada que validar', function () {
+    expect(CalendarEvent::make(id: 1, title: 'x', start: '2026-10-16')->url)->toBeNull();
+});

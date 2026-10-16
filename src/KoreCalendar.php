@@ -42,16 +42,25 @@ use Throwable;
  *
  *     class TeamCalendar extends KoreCalendar
  *     {
- *         public function configure(): void
+ *         protected function configure(): void
  *         {
  *             $this->views(['month', 'week', 'list'])->timezone('Europe/Madrid')->slotMinTime('08:00');
  *         }
  *
- *         public function events(CarbonImmutable $from, CarbonImmutable $to): iterable
+ *         protected function events(CarbonImmutable $from, CarbonImmutable $to): iterable
  *         {
- *             return Meeting::overlapping($from, $to)->get()->map->toCalendarEvent();
+ *             return Meeting::query()->where('team_id', auth()->user()->team_id)->overlapping($from, $to)->get()->map->toCalendarEvent();
  *         }
  *     }
+ *
+ * `events()` es la frontera de acceso: todo lo que el navegador puede tocar (mover, redimensionar,
+ * abrir, editar, eliminar) se busca ENTRE LO QUE ESTE MÉTODO DEVUELVE, así que lo que no devuelve
+ * no se puede tocar. Ahí van los scopes del consumidor (tenant, usuario, permisos).
+ *
+ * Los métodos del consumidor son `protected` (`events`, `resources`, `configure` y los hooks de
+ * guardado): Livewire deja llamar desde el navegador a cualquier método público
+ * (`$wire.events()` devolvería los eventos con su `meta`). Si alguno se declara `public`, el
+ * proveedor del paquete lo bloquea igualmente: ver `SERVER_ONLY`.
  *
  * Convenciones de KoreDataTable / KoreKanban:
  *
@@ -103,6 +112,24 @@ abstract class KoreCalendar extends Component
     use ManagesRecurrence;
     use UndoesChanges;
 
+    /**
+     * Los métodos que el navegador nunca puede llamar, aunque el consumidor los declare
+     * `public` (los docs y mucho código copiado los enseñan así). Livewire despacha a
+     * cualquier método público de una subclase: `$wire.events()` devolvería los eventos
+     * completos, `meta` incluido, y `$wire.createEvent({...})` saltaría toda la validación.
+     * `KoreCalendarServiceProvider` lanza `MethodNotFoundException` para estos nombres
+     * antes de que Livewire mire la visibilidad, para cualquier subclase.
+     *
+     * Las acciones legítimas (`next`, `moveEvent`, `clickEvent`…) no están: validan lo que reciben.
+     *
+     * @var list<string>
+     */
+    public const SERVER_ONLY = [
+        'events', 'resources', 'configure', 'booted',
+        'persistMove', 'persistResize', 'createEvent', 'updateEvent', 'deleteEvent',
+        'onDateSelect', 'onEventClick', 'conflicts',
+    ];
+
     #[Url(as: 'view', except: '')]
     public string $view = '';
 
@@ -123,17 +150,23 @@ abstract class KoreCalendar extends Component
     /**
      * Los eventos que intersecan [from, to), en instantes con la zona de la vista.
      * CalendarEvent, arrays con su forma, o lo que devuelva `HasCalendarEvents`.
+     *
+     * Es la frontera de acceso del calendario: lo que no devuelve no se puede mover,
+     * abrir ni eliminar. Aplica aquí el scope del tenant o del usuario, no solo en la UI.
+     *
+     * `protected` a propósito (ver `SERVER_ONLY`); quien lo declare `public` sigue funcionando,
+     * pero el navegador no puede llamarlo.
      */
-    abstract public function events(CarbonImmutable $from, CarbonImmutable $to): iterable;
+    abstract protected function events(CarbonImmutable $from, CarbonImmutable $to): iterable;
 
     /** Recursos (salas, personas…). Sin recursos, las vistas por recurso no se ofrecen. */
-    public function resources(): iterable
+    protected function resources(): iterable
     {
         return [];
     }
 
     /** La configuración del calendario. Se llama en cada petición. */
-    public function configure(): void {}
+    protected function configure(): void {}
 
     public function booted(): void
     {
@@ -149,12 +182,12 @@ abstract class KoreCalendar extends Component
     // previous/next solo necesitan el rango de la vista: sin consultar eventos.
     public function previous(): void
     {
-        $this->date = $this->koreRange()->previous()->toDateString();
+        $this->koreGoTo($this->koreRange()->previous()->toDateString());
     }
 
     public function next(): void
     {
-        $this->date = $this->koreRange()->next()->toDateString();
+        $this->koreGoTo($this->koreRange()->next()->toDateString());
     }
 
     public function today(): void
@@ -173,7 +206,17 @@ abstract class KoreCalendar extends Component
 
     public function goToDate(string $date): void
     {
-        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) && checkdate((int) substr($date, 5, 2), (int) substr($date, 8, 2), (int) substr($date, 0, 4))) {
+        $this->koreGoTo($date);
+    }
+
+    /**
+     * Navega a un día si se acepta (`Bounds::acceptsDate()`): una fecha real dentro de lo
+     * que admite el calendario. Lo que no, se ignora y se queda donde estaba. Así `next()`
+     * no puede salirse de la ventana y caer, al repintar, en «hoy».
+     */
+    private function koreGoTo(string $date): void
+    {
+        if (Bounds::acceptsDate($date, CalendarSettings::make($this->koreSettingsOverrides())->validRange)) {
             $this->date = $date;
         }
     }
@@ -751,6 +794,17 @@ abstract class KoreCalendar extends Component
         return $this->set('default_view', $view);
     }
 
+    /**
+     * La vista que se abre en una pantalla estrecha (max-width: 640px) la PRIMERA vez que se
+     * carga sin `?view=` en la URL: `->mobileView('day')`. `null` quita la del config. Si no es una
+     * de las vistas del calendario se ignora. Lo hace el cliente al iniciar (el servidor no sabe
+     * el ancho), así que provoca una petición extra la primera vez.
+     */
+    protected function mobileView(?string $view): static
+    {
+        return $this->set('mobile_view', $view ?? false);
+    }
+
     protected function timezone(string $timezone): static
     {
         return $this->set('timezone', $timezone);
@@ -915,7 +969,21 @@ abstract class KoreCalendar extends Component
         return view('kore-calendar::livewire.calendar', [
             'koreCalendar' => $this->koreRendered(),
             'koreViews' => $this->koreAvailableViews(),
+            'koreMobileView' => $this->koreMobileView(),
         ]);
+    }
+
+    /**
+     * La vista móvil ya validada, o `false` (no `null`: la etiqueta cae al config con `null`, y
+     * un `->mobileView(null)` tiene que poder apagar la del config).
+     */
+    protected function koreMobileView(): string|false
+    {
+        $wanted = array_key_exists('mobile_view', $this->koreSettings)
+            ? $this->koreSettings['mobile_view']
+            : config('kore-calendar.mobile_view');
+
+        return CalendarViews::mobile($wanted, $this->koreAvailableViews()) ?? false;
     }
 
     /** @return list<string> */
@@ -931,6 +999,32 @@ abstract class KoreCalendar extends Component
 
     protected function koreSettingsResolved(): CalendarSettings
     {
+        $overrides = $this->koreSettingsOverrides();
+
+        if ($this->date === '') {
+            return CalendarSettings::make($overrides);
+        }
+
+        // `$date` viene de la URL (`?date=`) o del navegador (`$wire.date = …`), y llegaba tal
+        // cual hasta `Carbon`, que entiende `+999999 years` o `@999999999999` y revienta con
+        // `foo` o `10000-01-01`. Solo se usa si es una fecha real dentro de lo que admite el
+        // calendario; si no, se ignora y sale «hoy». El rango válido sale de los propios
+        // ajustes, de ahí que se construyan primero sin fecha.
+        $today = CalendarSettings::make($overrides);
+
+        return Bounds::acceptsDate($this->date, $today->validRange)
+            ? CalendarSettings::make([...$overrides, 'date' => $this->date])
+            : $today;
+    }
+
+    /**
+     * Los ajustes de `configure()` y del estado, sin la fecha: `CalendarSettings::make()`
+     * con la fecha de hoy.
+     *
+     * @return array<string, mixed>
+     */
+    private function koreSettingsOverrides(): array
+    {
         // La vista de la URL (o de la última `changeView`), después `default_view` y, por
         // último, la primera que ofrezca. La misma cadena que <x-kore::calendar>.
         $view = CalendarViews::initial(
@@ -938,16 +1032,15 @@ abstract class KoreCalendar extends Component
             $this->koreAvailableViews(),
         );
 
-        return CalendarSettings::make([
+        return [
             ...$this->koreSettings,
             'view' => $view,
-            'date' => $this->date !== '' ? $this->date : null,
             'timeline.row_start' => $this->timelineRow,
             // Lo que se pulsa solo se ofrece si alguien lo va a recibir: el formulario
             // o un `onEventClick()` propio. Un `->eventClick(false)` explícito gana.
             'interaction.event_click' => $this->koreSettings['interaction.event_click']
                 ?? (config('kore-calendar.interaction.event_click') || $this->koreEventForm || $this->koreOverridesEventClick()),
-        ]);
+        ];
     }
 
     protected function koreRange(): ViewRange

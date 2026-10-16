@@ -27,10 +27,13 @@ Declarados en `:root` por `kore-calendar.css`. Los de tamaño son un valor; los 
 
 | Token | Valor por defecto | Para qué |
 |---|---|---|
-| `--kore-calendar-event-height` | `1.375rem` | Alto de una fila de evento en el mes, el carril de todo el día y el timeline |
+| `--kore-calendar-event-height` | `1.5rem` | Alto de una fila de evento en el mes, el carril de todo el día y el timeline. `1.5rem` = 24 px, el mínimo de un objetivo táctil (WCAG 2.5.8); por debajo, las filas dejan de cumplirlo |
 | `--kore-calendar-slot-height` | `2.5rem` | Alto de una ranura de la rejilla horaria. El alto de la columna es ranuras × este valor |
 | `--kore-calendar-column-min` | `4.5rem` | Ancho mínimo de una columna de la rejilla horaria; por debajo hay scroll horizontal |
 | `--kore-calendar-resource-width` | `12rem` | Ancho de la columna de recursos del timeline |
+| `--kore-calendar-resource-width-narrow` | `7rem` | Lo mismo en un timeline estrecho (menos de `40rem` de ancho, medido en el propio timeline). Un nombre que no cabe se trunca |
+| `--kore-calendar-target-min` | `1.5rem` | Tamaño mínimo de lo que se pulsa con cualquier puntero (WCAG 2.5.8, 24 px). Ver [Accesibilidad](accessibility.md#objetivos-táctiles) |
+| `--kore-calendar-target-coarse` | `2.75rem` | Tamaño o área de toque con un puntero grueso (`pointer: coarse`, 44 px) |
 | `--kore-calendar-timeline-slot-min` | `4.5rem` | Ancho mínimo de cada ranura del timeline |
 | `--kore-calendar-timeline-row-min` | `2.5rem` | Alto mínimo de una fila del timeline. El JS de la virtualización lo lee para estimar los espaciadores, así que va en `rem` o `px` |
 | `--kore-calendar-today` | `color-mix(in oklch, var(--kore-primary) 8%, transparent)` | Fondo del día actual |
@@ -38,7 +41,7 @@ Declarados en `:root` por `kore-calendar.css`. Los de tamaño son un valor; los 
 | `--kore-calendar-other-month` | `var(--kore-muted-fg)` | Días de relleno de la vista mes (los de los meses vecinos): el color de su número, y su celda se tiñe con un 5 % de este color. Un solo token para las dos cosas, en claro y en oscuro. El día de hoy y los días deshabilitados conservan su propio fondo |
 | `--kore-calendar-non-business` | claro: `color-mix(in oklch, color-mix(in oklch, var(--kore-muted-fg) 12%, var(--kore-muted)) 75%, transparent)` · oscuro: `color-mix(in oklch, var(--kore-muted) 85%, transparent)` | Fondo de las horas y días que no son laborables |
 
-Los `--kc-*` (`--kc-top`, `--kc-span`…) son posiciones que calcula PHP para cada evento. No son API: no los toques.
+Los `--kc-*` (`--kc-top`, `--kc-span`…) son posiciones que calcula PHP para cada evento. No son API: no los toques. Tampoco `--kc-resource-col`, la columna de recursos que resuelve el CSS entre `--kore-calendar-resource-width` y su variante `-narrow`: cambia esas dos.
 
 ## De qué hereda
 
@@ -102,10 +105,11 @@ Escribe las sobrescrituras **fuera de cualquier `@layer`** y después del `@impo
 :root {
     /* Rejilla horaria más alta y barras de evento más gruesas */
     --kore-calendar-slot-height: 3rem;
-    --kore-calendar-event-height: 1.5rem;
+    --kore-calendar-event-height: 1.75rem;
 
-    /* Columna de recursos más ancha */
+    /* Columna de recursos más ancha (y algo más ancha también en un timeline estrecho) */
     --kore-calendar-resource-width: 14rem;
+    --kore-calendar-resource-width-narrow: 8rem;
 
     /* El día actual, más marcado */
     --kore-calendar-today: color-mix(in oklch, var(--kore-primary) 14%, transparent);
@@ -127,6 +131,14 @@ Para cambiar un solo calendario, define los tokens en su clase (el `class` del c
 ```
 
 Para cambiar algo que no es un token (el borde de un evento, por ejemplo), estas son las clases a las que se puede apuntar: `.kore-calendar-event`, `.kore-calendar-dot`, `.kore-calendar-month-slot`, `.kore-calendar-day-other` (celda de relleno del mes), `.kore-calendar-other-number` (su número), `.kore-calendar-timed`, `.kore-calendar-now`, `.kore-calendar-timeline-lane`, `.kore-calendar-non-business`, `.kore-calendar-conflict`, `.kore-calendar-preview`. Los atributos `data-continues-before`, `data-continues-after`, `data-conflict` y `data-invalid` (la previsualización fuera de horario) sirven de selector.
+
+## Pantallas estrechas
+
+El mes y el timeline son contenedores de CSS (`container-type: inline-size`, nombrados `kore-calendar-month` y `kore-calendar-timeline`) y se adaptan a **su** ancho, no al de la pantalla. La barra hace lo mismo con la utilidad `@container` de Tailwind v4 (por eso necesita `@source` de las vistas, como el resto). Los umbrales están en `kore-calendar.css` (`40rem`) y en la barra (`@2xl`, `42rem`): una container query no admite variables en su condición, así que no son tokens. Para moverlos, repite el bloque `@container kore-calendar-month (max-width: …)` del archivo con otro valor, después del `@import`.
+
+Clases a las que apuntar en el mes estrecho: `.kore-calendar-event-dot` (un evento con hora, que se queda en el punto), `.kore-calendar-event-time` y `.kore-calendar-event-title` (lo que se recorta). Se recortan como un `sr-only`, no con `display: none`: no los quites del árbol de accesibilidad. Más: `.kore-calendar-target` y `.kore-calendar-hit` (objetivos táctiles), `.kore-calendar-resize` (el asa, con `.kore-calendar-resize-x` y `-y`) y `.kore-calendar-select` (el selector de vista de la barra estrecha).
+
+Un contenedor de CSS no toma su ancho de lo que lleva dentro, así que el calendario lleva `w-full` (en un `flex` sin ancho propio llena el hueco y se encoge si hace falta). En una columna `auto` de un `grid` no hay ancho que llenar y se queda en 0: dale a la columna `1fr` o un ancho.
 
 ## Movimiento
 

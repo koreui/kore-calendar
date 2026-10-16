@@ -264,8 +264,9 @@ it('selectOverlap(false): un día completo choca con un evento de ese día, y un
     $cierre = Livewire::test(Cal::class)->call('selectRange', bhTs('2026-10-13'), bhTs('2026-10-13'), true);
     $dia = Livewire::test(Cal::class)->call('selectRange', bhTs('2026-10-14'), bhTs('2026-10-14'), true);
 
+    // «Cierre» es de fondo: no se dibuja, así que el rechazo no dice su título (solo el de un evento visible).
     expect(Cal::$selected)->toHaveCount(1)
-        ->and(bhToast($cierre)['title'])->toBe('Se solapa con «Cierre»')
+        ->and(bhToast($cierre)['title'])->toBe('Se solapa con otro evento')
         ->and(bhToast($dia)['title'])->toBe('Se solapa con «Reunión»');
 });
 

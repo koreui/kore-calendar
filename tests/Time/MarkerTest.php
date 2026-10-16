@@ -32,6 +32,24 @@ it('funciona con fechas anteriores a 1970', function () {
         ->and((string) $m->startOfDay())->toBe('1969-12-31 00:00:00');
 });
 
+it('los años 1 a 100 son esos años, no los de dos cifras de gmmktime', function (string $date, int $year) {
+    // gmmktime lee 1 como 2001 y 70 como 1970: `0001-01-01` (el primer día que admite el paquete) saldría en 2001.
+    $m = Marker::parse($date);
+
+    expect($m->year())->toBe($year)
+        ->and($m->toDateString())->toBe($date);
+})->with([
+    'año 1' => ['0001-01-01', 1],
+    'año 50' => ['0050-05-05', 50],
+    'año 70' => ['0070-12-31', 70],
+    'año 100' => ['0100-12-31', 100],
+    'año 101' => ['0101-01-01', 101],
+]);
+
+it('el año 1 es el primer día que admite el paquete', function () {
+    expect(Marker::parse('0001-01-01')->ts)->toBe(\KoreUi\Calendar\Interaction\Bounds::MIN);
+});
+
 it('suma meses recortando al último día, sin saltar de mes', function (string $from, int $months, string $expected) {
     expect(Marker::parse($from)->addMonths($months)->toDateString())->toBe($expected);
 })->with([

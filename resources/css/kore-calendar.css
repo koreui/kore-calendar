@@ -11,14 +11,27 @@
  */
 
 :root {
-    --kore-calendar-event-height: 1.375rem;
+    /* 1,5 rem = 24 px: una fila de evento es un objetivo táctil y WCAG 2.5.8 pide 24 px como mínimo. */
+    --kore-calendar-event-height: 1.5rem;
     --kore-calendar-slot-height: 2.5rem;
     /* Ancho mínimo de columna en la rejilla horaria: por debajo, scroll horizontal (dayMinWidth). */
     --kore-calendar-column-min: 4.5rem;
-    /* Timeline: ancho de la columna de recursos, mínimo por ranura y alto mínimo de fila. */
+    /*
+     * Timeline: ancho de la columna de recursos, mínimo por ranura y alto mínimo de fila.
+     * En un timeline estrecho (menos de 40 rem de ancho) la columna pasa a -narrow: con 12 rem
+     * se comía la mitad de un móvil y quedaba una ranura de horas por pantalla.
+     */
     --kore-calendar-resource-width: 12rem;
+    --kore-calendar-resource-width-narrow: 7rem;
     --kore-calendar-timeline-slot-min: 4.5rem;
     --kore-calendar-timeline-row-min: 2.5rem;
+    /*
+     * Objetivos táctiles. -min es el suelo en cualquier puntero (WCAG 2.5.8, nivel AA: 24 px);
+     * -coarse, el área con un puntero grueso (un dedo; WCAG 2.5.5: 44 px). Van en rem para
+     * crecer con el tamaño de letra.
+     */
+    --kore-calendar-target-min: 1.5rem;
+    --kore-calendar-target-coarse: 2.75rem;
     --kore-calendar-today: color-mix(in oklch, var(--kore-primary) 8%, transparent);
     --kore-calendar-now: var(--kore-destructive);
     /* Días de relleno del mes (los de los meses vecinos): el número se pinta con este color y el fondo es un tinte suyo. */
@@ -101,6 +114,44 @@
 }
 
 /*
+ * Mes estrecho: container query sobre la REJILLA entera, no sobre cada celda. Un contenedor
+ * crea un contexto de apilado (su contención de layout), y una barra de varios días que se
+ * extiende por las celdas vecinas quedaría tapada por el fondo de la siguiente. La rejilla
+ * entera ya recorta (overflow-hidden), así que el contexto no cambia nada.
+ *
+ * Con menos de 40 rem (celdas de ~90 px con siete columnas) la hora y el título de un evento
+ * con hora no caben: se cortaban a «9:3». Se queda el punto de color, centrado, y la barra de
+ * un evento de día completo o de varios días (sin la hora, que es lo que la cortaba).
+ *
+ * El texto NO se quita con display: none: eso lo sacaría del árbol de accesibilidad. Se
+ * recorta como un sr-only, así que el lector de pantalla sigue leyendo «9:30 Reunión» y el
+ * nombre del enlace o del botón no cambia. Solo lo que está en una celda (.kore-calendar-
+ * month-slot): la ventana del «+N más» vive dentro de la misma rejilla y conserva el texto.
+ */
+.kore-calendar-month {
+    container: kore-calendar-month / inline-size;
+}
+
+@container kore-calendar-month (max-width: 40rem) {
+    .kore-calendar-month-slot .kore-calendar-event-time,
+    .kore-calendar-month-slot .kore-calendar-event-dot .kore-calendar-event-title {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        padding: 0;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+        border: 0;
+    }
+
+    .kore-calendar-month-slot .kore-calendar-event-dot {
+        justify-content: center;
+    }
+}
+
+/*
  * Día de un mes vecino: el número con --kore-calendar-other-month y la celda con un
  * tinte suyo, así que sirve igual en claro y en oscuro y cambiar el token cambia las
  * dos cosas. Va ANTES que el de hoy: con el mismo peso gana el último, y hoy tiene
@@ -165,6 +216,27 @@
 }
 
 /* ── Timeline ──────────────────────────────────────────────────────────── */
+
+/*
+ * El ancho de la columna de recursos sale de --kc-resource-col, que se declara en los hijos
+ * directos de la tabla (la cabecera fija y la ventana de filas) y no en la tabla: una
+ * container query no puede dar estilo al propio contenedor, solo a sus descendientes.
+ * Por debajo de 40 rem la columna pasa de --kore-calendar-resource-width a su variante
+ * -narrow. Es el contenedor del scroll: su ancho lo da el layout, no el contenido.
+ */
+.kore-calendar-timeline {
+    container: kore-calendar-timeline / inline-size;
+}
+
+.kore-calendar-timeline > * {
+    --kc-resource-col: var(--kore-calendar-resource-width);
+}
+
+@container kore-calendar-timeline (max-width: 40rem) {
+    .kore-calendar-timeline > * {
+        --kc-resource-col: var(--kore-calendar-resource-width-narrow);
+    }
+}
 
 /* Una línea por ranura, sin un nodo por ranura y fila: con 200 recursos × 24 h serían 4 800. */
 .kore-calendar-timeline-lane {
@@ -244,14 +316,112 @@
     background: color-mix(in oklch, var(--kore-destructive) 14%, transparent);
 }
 
-.kore-calendar-resize {
-    opacity: 0;
+/*
+ * El asa es una zona de agarre transparente de 24 px (WCAG 2.5.8; con un dedo, 44 px) y la
+ * pista visual es una franja de 6 px en el borde, un ::before. Así la zona crece sin que el
+ * evento parezca otro. Nunca pasa de la mitad del evento (60 % con el dedo): en uno corto el
+ * resto tiene que seguir siendo la zona de mover. Va dentro del evento, que recorta.
+ */
+.kore-calendar-resize-y {
+    height: min(var(--kore-calendar-target-min), 50%);
 }
 
-.kore-calendar-event:hover .kore-calendar-resize,
-.kore-calendar-event:focus-visible .kore-calendar-resize {
-    opacity: 1;
+.kore-calendar-resize-x {
+    width: min(var(--kore-calendar-target-min), 50%);
+}
+
+.kore-calendar-resize::before {
+    content: '';
+    position: absolute;
+    opacity: 0;
     background: color-mix(in oklch, var(--kc-color) 45%, transparent);
+}
+
+.kore-calendar-resize-y::before {
+    inset-inline: 0;
+    inset-block-end: 0;
+    height: 0.375rem;
+}
+
+.kore-calendar-resize-x::before {
+    inset-block: 0;
+    inset-inline-end: 0;
+    width: 0.375rem;
+}
+
+.kore-calendar-event:hover .kore-calendar-resize::before,
+.kore-calendar-event:focus-visible .kore-calendar-resize::before {
+    opacity: 1;
+}
+
+@media (pointer: coarse) {
+    .kore-calendar-resize-y {
+        height: min(var(--kore-calendar-target-coarse), 60%);
+    }
+
+    .kore-calendar-resize-x {
+        width: min(var(--kore-calendar-target-coarse), 60%);
+    }
+}
+
+/* Sin hover (táctil) no hay forma de descubrir el asa: la franja se queda a la vista, tenue. */
+@media (hover: none) {
+    .kore-calendar-resize::before {
+        opacity: 0.6;
+    }
+}
+
+/* ── Objetivos táctiles ────────────────────────────────────────────────── */
+
+/*
+ * .kore-calendar-target: el elemento MIDE al menos --kore-calendar-target-min (24 px) y, con un
+ * puntero grueso, --kore-calendar-target-coarse (44 px). Para los botones de la barra, el
+ * selector de vista y los controles sueltos: en táctil la barra crece, y está bien.
+ *
+ * .kore-calendar-hit: mide 24 px siempre, y con un puntero grueso su ÁREA de toque llega a
+ * 44 px con un ::after centrado, sin cambiar el layout. Para lo que está apretado dentro de
+ * una celda («+N más», el número del día). Los vecinos con z-index (los eventos) le ganan
+ * el toque en la franja que se solapa.
+ */
+.kore-calendar-target,
+.kore-calendar-hit {
+    min-width: var(--kore-calendar-target-min);
+    min-height: var(--kore-calendar-target-min);
+}
+
+.kore-calendar-hit {
+    position: relative;
+}
+
+@media (pointer: coarse) {
+    .kore-calendar-target {
+        min-width: var(--kore-calendar-target-coarse);
+        min-height: var(--kore-calendar-target-coarse);
+    }
+
+    .kore-calendar-hit::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: max(100%, var(--kore-calendar-target-coarse));
+        height: max(100%, var(--kore-calendar-target-coarse));
+        transform: translate(-50%, -50%);
+    }
+}
+
+/*
+ * El selector de vista de la barra estrecha. 16 px con un puntero grueso: iOS hace zoom a la
+ * página al enfocar un campo con menos.
+ */
+.kore-calendar-select {
+    font-size: 0.875rem;
+}
+
+@media (pointer: coarse) {
+    .kore-calendar-select {
+        font-size: 1rem;
+    }
 }
 
 @media (prefers-reduced-motion: no-preference) {
