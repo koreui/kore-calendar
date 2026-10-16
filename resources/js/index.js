@@ -15,9 +15,11 @@
  * arranca en DOMContentLoaded, que ocurre antes.
  */
 import KoreCalendarDrag from './interaction/drag.js';
+import KoreCalendarGrid from './grid.js';
 
 const COMPONENTES = {
     KoreCalendarDrag,
+    KoreCalendarGrid,
 };
 
 const registrar = () => {

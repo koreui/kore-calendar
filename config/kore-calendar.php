@@ -6,21 +6,16 @@
  * Archivo propio y no una sección de `kore-ui.php`: un segundo paquete no debe
  * depender de que la aplicación haya publicado la configuración de otro.
  *
- * Esquema completo en la spec (docs/calendar.md §13). En la fase 1 solo existe la
- * prueba técnica, que todavía no lee estas claves: cada una se conecta en la fase
- * que la usa, con su test. Las que no aparecen aquí aún no existen.
+ * Todo lo de aquí se puede cambiar también por calendario, con la prop de la
+ * etiqueta o con `configure()` en la clase base. Lo lee `CalendarSettings`.
  */
 
 return [
 
-    /*
-    | Vista con la que arranca un calendario que no dice otra cosa.
-    */
+    /* Vista inicial: month | week | day | list | resource-week | resource-day */
     'default_view' => 'month',
 
-    /*
-    | Zona horaria de la vista. null = config('app.timezone').
-    */
+    /* Zona horaria de la vista. null = config('app.timezone'). */
     'timezone' => null,
 
     /*
@@ -29,19 +24,67 @@ return [
     */
     'first_day' => null,
 
+    /* Numeración de semanas: false (no se muestran) | 'iso' | 'locale'. */
+    'week_numbers' => false,
+
+    /* Días de la semana ocultos (0 = domingo). [0, 6] = solo laborables. */
+    'hidden_days' => [],
+
     'time' => [
         'slot_duration' => '30m',
-        'snap' => null,           // null = slot_duration
         'slot_min_time' => '00:00',
-        'slot_max_time' => '24:00',
+        'slot_max_time' => '24:00',       // admite más de 24 h: '26:00'
+        'event_min_minutes' => 15,        // alto mínimo y mínimo para colisionar
+        'event_short_minutes' => 30,      // por debajo, una sola línea
+        'next_day_threshold' => '00:00',  // desde qué hora un evento ocupa también el día de su fin
+        'default_timed_duration' => '1h', // si un evento con hora no trae fin
+        'default_all_day_duration' => 1,  // días, si un evento de día completo no trae fin
     ],
 
+    'month' => [
+        'max_events' => null,             // límite por celda; el resto va al "+N más"
+        'max_event_rows' => null,         // límite de filas contando la del "+N más"
+        'fixed_week_count' => true,       // siempre 6 semanas
+        'show_non_current_dates' => true, // días de los meses vecinos
+    ],
+
+    'time_grid' => [
+        'all_day_max_rows' => 5,
+        'slot_event_overlap' => true,     // los solapados se pisan un poco, como en FullCalendar
+        'max_stack' => null,              // máximo de eventos lado a lado
+        'dates_above_resources' => false, // cabecera: fecha → recursos (true) o recurso → fechas
+    ],
+
+    'event_order' => 'start,-duration,allDay,title',
+    'event_order_strict' => false,
+    'now_indicator' => true,
+
     /*
-    | Textos de interfaz. Ninguna vista lleva texto fijo (lo vigila
-    | tests/Ui/TextosEnInglesTest.php).
+    | Formatos de Carbon `isoFormat`, que se adaptan al idioma sin ext-intl:
+    | LL = «16 de octubre de 2026» / «October 16, 2026», LT = hora del locale.
     */
+    'formats' => [
+        'title_month' => 'MMMM YYYY',
+        'title_day' => 'dddd, LL',
+        'title_week_start' => 'D MMM',
+        'title_week_end' => 'D MMM YYYY',
+        'day_header' => 'ddd D',
+        'day_header_long' => 'dddd, LL',
+        'weekday' => 'ddd',
+        'day_number' => 'D',
+        'time' => 'LT',
+    ],
+
+    /* Textos de interfaz. Ninguna vista lleva texto fijo (lo vigila tests/Ui/TextosEnInglesTest.php). */
     'translations' => [
-        // Vacío hasta la fase 3: la prueba técnica no tiene texto de interfaz.
+        'all_day' => 'Todo el día',
+        'more' => '+:count más',
+        'more_label' => 'Ver :count eventos más del :date',
+        'week' => 'Sem.',
+        'week_number' => 'Semana :number',
+        'no_events' => 'No hay eventos en este periodo',
+        'close' => 'Cerrar',
+        'events_of' => 'Eventos del :date',
     ],
 
 ];

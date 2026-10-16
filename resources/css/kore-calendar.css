@@ -1,0 +1,133 @@
+/*
+ * kore-ui/calendar — lo que Tailwind no puede expresar con clases.
+ *
+ * Las posiciones las calcula PHP y llegan como custom properties (--kc-*), igual
+ * que los gráficos de kore-ui (--kx, --kw): el navegador escala sin JavaScript.
+ * Los colores salen de los tokens de kore-ui, así que el tema y el dark mode se
+ * aplican solos.
+ *
+ * Se importa después de kore-theme.css:
+ *   @import '../../vendor/kore-ui/calendar/resources/css/kore-calendar.css';
+ */
+
+:root {
+    --kore-calendar-event-height: 1.375rem;
+    --kore-calendar-slot-height: 2.5rem;
+    /* Ancho mínimo de columna en la rejilla horaria: por debajo, scroll horizontal (dayMinWidth). */
+    --kore-calendar-column-min: 4.5rem;
+    --kore-calendar-today: color-mix(in oklch, var(--kore-primary) 8%, transparent);
+    --kore-calendar-now: var(--kore-destructive);
+    --kore-calendar-other-month: var(--kore-muted-fg);
+}
+
+/* ── Eventos ───────────────────────────────────────────────────────────── */
+
+/*
+ * El color del evento llega como --kore-event (un token: var(--kore-chart-3)).
+ * El texto es siempre el primer plano del tema sobre un tinte claro del color:
+ * un color de categoría usado como texto no llega a contraste AA (la misma
+ * razón por la que kore-ui tiene los tokens -text).
+ */
+.kore-calendar-event {
+    --kc-color: var(--kore-event, var(--kore-primary));
+    background: color-mix(in oklch, var(--kc-color) 16%, var(--kore-bg));
+    border-inline-start: 3px solid var(--kc-color);
+    color: var(--kore-fg);
+}
+
+.kore-calendar-event:hover {
+    background: color-mix(in oklch, var(--kc-color) 24%, var(--kore-bg));
+}
+
+.kore-calendar-event:focus-visible {
+    outline: 2px solid var(--kore-ring);
+    outline-offset: 1px;
+    z-index: 30;
+}
+
+/* Trozo que continúa desde la semana anterior o sigue en la siguiente. */
+.kore-calendar-event[data-continues-before] {
+    border-inline-start-style: dashed;
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
+}
+
+.kore-calendar-event[data-continues-after] {
+    border-start-end-radius: 0;
+    border-end-end-radius: 0;
+}
+
+.kore-calendar-dot {
+    background: var(--kore-event, var(--kore-primary));
+}
+
+/* ── Mes ───────────────────────────────────────────────────────────────── */
+
+/* Cada evento vive dentro de la celda donde empieza y se extiende --kc-span columnas. */
+.kore-calendar-month-slot {
+    position: absolute;
+    inset-inline-start: 2px;
+    top: calc(var(--kc-row) * (var(--kore-calendar-event-height) + 2px));
+    width: calc(100% * var(--kc-span) - 4px);
+    height: var(--kore-calendar-event-height);
+}
+
+.kore-calendar-month-events {
+    position: relative;
+    min-height: calc(var(--kc-rows, 0) * (var(--kore-calendar-event-height) + 2px));
+}
+
+.kore-calendar-day-today {
+    background: var(--kore-calendar-today);
+}
+
+/* ── Rejilla horaria ───────────────────────────────────────────────────── */
+
+.kore-calendar-lane {
+    position: relative;
+    height: calc(var(--kc-slots) * var(--kore-calendar-slot-height));
+}
+
+.kore-calendar-timed {
+    position: absolute;
+    top: calc(var(--kc-top) * 1%);
+    height: calc(var(--kc-height) * 1%);
+    inset-inline-start: calc(var(--kc-left) * 1%);
+    inset-inline-end: calc(var(--kc-right) * 1%);
+    z-index: var(--kc-z, 1);
+}
+
+/*
+ * Con slotEventOverlap, margen final para no tapar el asa del de detrás (#6569).
+ * Proporcional y con tope: los 20 px fijos de FullCalendar se comen una sexta
+ * parte de una columna de semana en una pantalla normal.
+ */
+.kore-calendar-timed[data-margin-end] {
+    margin-inline-end: min(1.25rem, 12%);
+}
+
+.kore-calendar-now {
+    position: absolute;
+    inset-inline: 0;
+    top: calc(var(--kc-top) * 1%);
+    border-top: 2px solid var(--kore-calendar-now);
+    z-index: 25;
+    pointer-events: none;
+}
+
+.kore-calendar-now::before {
+    content: '';
+    position: absolute;
+    inset-inline-start: -5px;
+    top: -6px;
+    width: 10px;
+    height: 10px;
+    border-radius: 9999px;
+    background: var(--kore-calendar-now);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .kore-calendar-event {
+        transition: background-color 120ms ease;
+    }
+}
