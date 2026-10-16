@@ -154,18 +154,45 @@ final class Text
      */
     public static function unfold(string $ics): array
     {
-        $logical = [];
+        return iterator_to_array(self::lines($ics), false);
+    }
 
-        foreach (preg_split('/\r\n|\n|\r/', $ics) as $index => $physical) {
-            if ($logical !== [] && $physical !== '' && ($physical[0] === ' ' || $physical[0] === "\t")) {
-                $logical[array_key_last($logical)][1] .= substr($physical, 1);
+    /**
+     * Lo mismo que `unfold()`, de una en una. Es lo que usa el lector: un archivo de 5 MB de
+     * saltos de línea son cinco millones de líneas físicas, y `preg_split()` más un array por
+     * cada una pasan de 300 MB. Aquí solo hay una línea lógica en memoria a la vez.
+     *
+     * @return \Generator<int, array{0: int, 1: string}>
+     */
+    public static function lines(string $ics): \Generator
+    {
+        $length = strlen($ics);
+        $position = 0;
+        $number = 0;
+        $current = null;
 
-                continue;
+        while (true) {
+            $end = $position + strcspn($ics, "\r\n", $position);
+            $physical = substr($ics, $position, $end - $position);
+            $number++;
+
+            if ($current !== null && $physical !== '' && ($physical[0] === ' ' || $physical[0] === "\t")) {
+                $current[1] .= substr($physical, 1);
+            } else {
+                if ($current !== null) {
+                    yield $current;
+                }
+
+                $current = [$number, $physical];
             }
 
-            $logical[] = [$index + 1, $physical];
+            if ($end >= $length) {
+                break;
+            }
+
+            $position = $end + ($ics[$end] === "\r" && ($ics[$end + 1] ?? '') === "\n" ? 2 : 1);
         }
 
-        return $logical;
+        yield $current;
     }
 }

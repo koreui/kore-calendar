@@ -36,6 +36,16 @@ return [
     */
     'default_view' => 'month',
 
+    /*
+    | Vista para pantallas estrechas (max-width: 640px), p. ej. 'day' o 'list'. null = ninguna.
+    | Solo se usa en la PRIMERA carga sin ?view= en la URL: la elección explícita del usuario
+    | (un enlace con ?view=, o el selector) manda siempre. Si no está en `views` (o es de recursos
+    | y no hay recursos), se ignora. El servidor no sabe el ancho de la pantalla: lo hace el cliente
+    | al iniciar, con un render extra la primera vez. También: ->mobileView('day') en `configure()`
+    | y la prop mobile-view.
+    */
+    'mobile_view' => null,
+
     /* Vistas del selector. Las de recursos solo se ofrecen si el calendario tiene recursos. */
     'views' => ['month', 'week', 'day', 'list', 'resource-week', 'resource-day', 'timeline-day', 'timeline-week', 'timeline-month'],
 
@@ -90,8 +100,34 @@ return [
         'window' => 60,                   // filas por ventana
     ],
 
+    /*
+    | Topes de las series recurrentes. Una regla hostil (`FREQ=MINUTELY` desde 2020, o
+    | `FREQ=SECONDLY;COUNT=99999999`) no puede tumbar la página, y limitar solo lo que se
+    | dibuja no basta: php-rrule recorre y guarda en memoria TODAS las ocurrencias desde
+    | `DTSTART` hasta la vista (unos 350 bytes cada una). Por eso hay dos pares de topes: lo
+    | que se dibuja y lo que se recorre, cada uno por serie y sumado en todo el render.
+    |
+    | Pasado un tope se corta lo que falta y se avisa en el log (`logger()->warning`). Las
+    | reglas de segundos a semanas sin `COUNT` ni `BYSETPOS` no recorren el pasado (el inicio se
+    | adelanta); lo que no se puede adelantar (`COUNT` grande, `MONTHLY`, `YEARLY`) sí, y lo
+    | acota `max_iterations`.
+    */
     'recurrence' => [
-        'max_occurrences' => 1000,        // por serie y vista: una regla FREQ=MINUTELY no tumba la página
+        'max_occurrences' => 1000,        // por serie y vista: ocurrencias que se dibujan (las del rango más un día de margen a cada lado)
+        'max_total_occurrences' => 5000,  // lo mismo, sumadas todas las series de un render
+        'max_iterations' => 50000,        // por serie: ocurrencias que se recorren desde DTSTART (las anteriores a la vista también)
+        'max_total_iterations' => 250000, // lo mismo, sumadas todas las series de un render
+    ],
+
+    /*
+    | Lectura de archivos iCalendar (`ICalReader`, `ICalSource`): un `.ics` lo escribe un
+    | tercero. Se pueden cambiar por lectura con las opciones del mismo nombre en camelCase
+    | (`maxBytes`, `maxEvents`, `maxErrors`).
+    */
+    'ical' => [
+        'max_bytes' => 5242880,           // 5 MB: un archivo más grande se rechaza con una ICalException
+        'max_events' => 10000,            // VEVENT que se leen; a partir del siguiente se deja de leer y queda un error
+        'max_errors' => 100,              // errores y avisos que se guardan (errors(), warnings()); los demás solo se cuentan
     ],
 
     'event_order' => 'start,-duration,allDay,title',

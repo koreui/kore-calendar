@@ -22,11 +22,38 @@ final class Component
      * guarda en vez de lanzarse porque en modo no estricto un VEVENT roto se salta y
      * el resto del archivo se lee.
      *
-     * @var list<ICalException>
+     * Son datos (línea y mensaje) y no excepciones: una `ICalException` lleva su traza, y
+     * 300 000 líneas malas eran 800 MB. Y no se guardan todos, ver `problem()`.
+     *
+     * @var list<array{line: int, message: string}>
      */
     public array $problems = [];
 
+    /** Cuántos problemas se descartaron por no caber. */
+    public int $dropped = 0;
+
     public function __construct(public readonly string $name, public readonly int $line) {}
+
+    /**
+     * Anota un problema si caben `$max`; si no, solo lo cuenta. De un VEVENT solo se usa el
+     * primero (con él se salta); de un VCALENDAR, cada uno es un aviso.
+     */
+    public function problem(string $message, int $line, int $max): void
+    {
+        if (count($this->problems) < $max) {
+            $this->problems[] = ['line' => $line, 'message' => $message];
+
+            return;
+        }
+
+        $this->dropped++;
+    }
+
+    /** El problema de que no se cierre, que va el primero: es el que explica los demás. */
+    public function unclosed(string $message, int $line): void
+    {
+        array_unshift($this->problems, ['line' => $line, 'message' => $message]);
+    }
 
     public function first(string $name): ?ContentLine
     {

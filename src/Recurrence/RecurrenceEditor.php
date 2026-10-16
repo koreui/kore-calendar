@@ -93,11 +93,7 @@ final class RecurrenceEditor
         $after = self::parts($rule);
 
         if (self::hasPart($rule, 'COUNT')) {
-            $remaining = count(self::rrule($series, $first, $zone)->getOccurrencesBetween(self::instant($recurrenceId, $occurrenceStart, $zone), null));
-
-            if ($remaining < 1) {
-                throw new InvalidArgumentException("Evento «{$series->id}»: la ocurrencia no es una de las que genera su regla.");
-            }
+            $remaining = self::remaining($series, $first, $zone, self::instant($recurrenceId, $occurrenceStart, $zone));
 
             $after = array_map(fn (string $part) => self::isPart($part, 'COUNT') ? 'COUNT='.$remaining : $part, $after);
         }
@@ -355,6 +351,36 @@ final class RecurrenceEditor
     }
 
     /**
+     * Cuántas ocurrencias de una serie con `COUNT` quedan desde `$instant`, ella incluida.
+     *
+     * Es el `COUNT` menos las que hay antes: no se generan las que siguen (con
+     * `COUNT=99999999` y `FREQ=SECONDLY` eran cien millones de objetos), y las de antes se
+     * recorren con el tope `recurrence.max_iterations`. Si la serie es tan larga que no
+     * se llega a la ocurrencia dentro del tope, no se puede cortar y lo dice.
+     */
+    private static function remaining(CalendarEvent $series, EventInstance $first, ?DateTimeZone $zone, DateTimeImmutable $instant): int
+    {
+        $position = RuleScanner::position(
+            RecurrenceExpander::normalizeUntil(self::ruleOf($series), $zone),
+            RecurrenceExpander::dtstart($first, $zone),
+            $instant,
+            RuleScanner::limit('max_iterations', RuleScanner::MAX_ITERATIONS),
+        );
+
+        if ($position['truncated']) {
+            throw new InvalidArgumentException("Evento «{$series->id}»: la serie tiene demasiadas ocurrencias anteriores a esta para cortarla en «esta y las siguientes» (tope `recurrence.max_iterations`).");
+        }
+
+        preg_match('/(?:^|;)\s*COUNT=(\d+)/i', self::ruleOf($series), $m);
+
+        if (! $position['found'] || (int) ($m[1] ?? 0) - $position['before'] < 1) {
+            throw new InvalidArgumentException("Evento «{$series->id}»: la ocurrencia no es una de las que genera su regla.");
+        }
+
+        return (int) $m[1] - $position['before'];
+    }
+
+    /**
      * El instante de la ocurrencia para comparar con lo que devuelve php-rrule: la
      * hora de pared como si fuera UTC en una regla flotante, el instante real en una con zona.
      */
@@ -378,11 +404,11 @@ final class RecurrenceEditor
 
         $text = trim($value);
 
-        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $text)) {
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/D', $text)) {
             return Marker::parse($text)->addSeconds($delta)->toDateString();
         }
 
-        if (preg_match('/(Z|[+-]\d{2}:?\d{2})$/i', $text)) {
+        if (preg_match('/(Z|[+-]\d{2}:?\d{2})$/iD', $text)) {
             return self::shiftedIn(new DateTimeImmutable($text), $delta)->format('Y-m-d\TH:i:sP');
         }
 

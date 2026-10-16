@@ -60,6 +60,6 @@ final class ICalResponse
     {
         $ascii = trim(str_replace(['%', '"'], '_', Str::ascii($name)));
 
-        return preg_match('/^\.ics$/i', $ascii) === 1 || $ascii === '' ? 'calendar.ics' : $ascii;
+        return preg_match('/^\.ics$/iD', $ascii) === 1 || $ascii === '' ? 'calendar.ics' : $ascii;
     }
 }

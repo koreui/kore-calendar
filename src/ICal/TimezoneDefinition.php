@@ -6,7 +6,7 @@ use DateTimeImmutable;
 use DateTimeZone;
 use InvalidArgumentException;
 use KoreUi\Calendar\Recurrence\RecurrenceExpander;
-use RRule\RRule;
+use KoreUi\Calendar\Recurrence\RuleScanner;
 
 /**
  * Un VTIMEZONE leído: de qué desplazamiento a cuál pasa una zona y cuándo
@@ -18,10 +18,27 @@ use RRule\RRule;
  * BYMONTH=10;BYDAY=-1SU`, lo que usan Outlook y Google) o con fechas explícitas
  * (`RDATE`, y lo que genera `TimezoneWriter`). Las dos se calculan aquí.
  *
+ * **Lo que viene de un archivo ajeno no manda sobre el coste.** Un VTIMEZONE solo cambia de
+ * hora una vez al año (Outlook y Google escriben `FREQ=YEARLY`), así que cualquier otra
+ * frecuencia se rechaza: `FREQ=SECONDLY` desde 1601 son 13 000 millones de ocurrencias. Y
+ * lo que se calcula es siempre una ventana con final, con tope de ocurrencias y de iteraciones.
+ *
  * @internal
  */
 final class TimezoneDefinition
 {
+    /** Años hacia atrás que se miran cuando se pregunta «desde siempre»: una ventana, no 1601. */
+    private const WINDOW_YEARS = 50;
+
+    /** Cambios de hora que se admiten por regla dentro de una ventana (un VTIMEZONE real tiene uno o dos por año). */
+    private const MAX_ONSETS = 1_000;
+
+    /** Ocurrencias que se recorren por regla y consulta (de 1601 a hoy son ~425 por cada BYxxx). */
+    private const MAX_ITERATIONS = 20_000;
+
+    /** Fechas explícitas (`RDATE`) que se admiten en todo el VTIMEZONE. */
+    private const MAX_RDATES = 10_000;
+
     /** @var array<int, list<array{ts: int, from: int, to: int}>> Cambios de [año-1, año+1], por año. */
     private array $years = [];
 
@@ -49,6 +66,7 @@ final class TimezoneDefinition
         }
 
         $components = [];
+        $rdateCount = 0;
 
         foreach ($vtimezone->children as $child) {
             if ($child->name !== 'STANDARD' && $child->name !== 'DAYLIGHT') {
@@ -63,9 +81,19 @@ final class TimezoneDefinition
                 throw new ICalException("Línea {$child->line}: el {$child->name} del VTIMEZONE «{$tzid}» necesita DTSTART, TZOFFSETFROM y TZOFFSETTO.", $child->line);
             }
 
+            $rule = $child->first('RRULE');
+
+            if ($rule !== null && RuleScanner::frequency($rule->value) !== 'YEARLY') {
+                throw new ICalException("Línea {$rule->line}: el {$child->name} del VTIMEZONE «{$tzid}» tiene una RRULE que no es FREQ=YEARLY; un VTIMEZONE cambia de hora una vez al año como mucho, así que se ignora su definición.", $rule->line);
+            }
+
             $rdates = [];
             foreach ($child->all('RDATE') as $rdate) {
                 foreach (explode(',', $rdate->value) as $piece) {
+                    if (++$rdateCount > self::MAX_RDATES) {
+                        throw new ICalException("Línea {$rdate->line}: el VTIMEZONE «{$tzid}» tiene más de ".self::MAX_RDATES.' fechas RDATE; se ignora su definición.', $rdate->line);
+                    }
+
                     $rdates[] = self::wall($rdate, trim($piece));
                 }
             }
@@ -75,7 +103,7 @@ final class TimezoneDefinition
                 'from' => self::offset($from),
                 'to' => self::offset($to),
                 'start' => self::wall($start, trim($start->value)),
-                'rrule' => ($rule = $child->first('RRULE')) ? trim($rule->value) : null,
+                'rrule' => $rule ? trim($rule->value) : null,
                 'rdates' => $rdates,
             ];
         }
@@ -90,9 +118,10 @@ final class TimezoneDefinition
     }
 
     /**
-     * Los cambios cuyo instante cae en [from, to], ordenados. `from` a null es "desde
-     * siempre": hace falta para saber en qué estado estaba una zona cuya última regla
-     * acabó hace décadas.
+     * Los cambios cuyo instante cae en [from, to], ordenados. `from` a null es "mucho
+     * tiempo atrás": hace falta para saber en qué estado estaba una zona cuya última regla
+     * acabó hace décadas. Las fechas explícitas (`DTSTART`, `RDATE`) se consideran todas; las
+     * que genera una `RRULE`, solo las de los {@see self::WINDOW_YEARS} años anteriores a `to`.
      *
      * @return list<array{ts: int, from: int, to: int}>
      */
@@ -164,16 +193,20 @@ final class TimezoneDefinition
         if ($component['rrule'] !== null) {
             $utc = new DateTimeZone('UTC');
 
+            // Nunca «desde siempre»: sin `from`, una ventana de años antes de `to`.
+            $low = $from ?? $to - self::WINDOW_YEARS * 366 * 86_400;
+
             try {
-                $rule = new RRule(
+                $scan = RuleScanner::between(
                     RecurrenceExpander::normalizeUntil($component['rrule'], null),
                     new DateTimeImmutable('@'.$component['start']),
+                    (new DateTimeImmutable('@'.$low))->setTimezone($utc),
+                    (new DateTimeImmutable('@'.$to))->setTimezone($utc),
+                    self::MAX_ONSETS,
+                    self::MAX_ITERATIONS,
                 );
 
-                foreach ($rule->getOccurrencesBetween(
-                    $from === null ? null : (new DateTimeImmutable('@'.$from))->setTimezone($utc),
-                    (new DateTimeImmutable('@'.$to))->setTimezone($utc),
-                ) as $occurrence) {
+                foreach ($scan->occurrences as $occurrence) {
                     $walls[] = (int) $occurrence->format('U');
                 }
             } catch (InvalidArgumentException) {
@@ -187,7 +220,7 @@ final class TimezoneDefinition
     /** `+0200` / `-050000` → segundos. */
     private static function offset(ContentLine $line): int
     {
-        if (! preg_match('/^([+-])(\d{2})(\d{2})(\d{2})?$/', trim($line->value), $m)) {
+        if (! preg_match('/^([+-])(\d{2})(\d{2})(\d{2})?$/D', trim($line->value), $m)) {
             throw new ICalException("Línea {$line->line}: {$line->name} «{$line->value}» no es un desplazamiento válido (se espera +0200 o -0500).", $line->line);
         }
 
@@ -198,7 +231,7 @@ final class TimezoneDefinition
 
     private static function wall(ContentLine $line, string $value): int
     {
-        if (! preg_match('/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?$/', $value, $m)) {
+        if (! preg_match('/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?$/D', $value, $m)) {
             throw new ICalException("Línea {$line->line}: {$line->name} «{$value}» no es una fecha y hora válida (se espera 20261025T030000).", $line->line);
         }
 

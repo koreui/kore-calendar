@@ -7,6 +7,7 @@ use InvalidArgumentException;
 use KoreUi\Calendar\Events\CalendarEvent;
 use KoreUi\Calendar\Recurrence\RecurrenceExpander;
 use RRule\RRule;
+use Throwable;
 
 /**
  * Archivo iCalendar (RFC 5545) → eventos.
@@ -32,13 +33,54 @@ use RRule\RRule;
  *   archivo iCalendar (sin `BEGIN:VCALENDAR`) lanza siempre. Los avisos (una zona
  *   resuelta por su VTIMEZONE, un RDATE que no se puede representar…) van a `warnings()`
  *   y nunca lanzan.
+ * - **Límites.** El archivo lo escribe un tercero. `maxBytes` rechaza el que pesa más;
+ *   `maxEvents` deja de leer al llegar al VEVENT número `maxEvents + 1` (queda en `errors()`);
+ *   `maxErrors` acota cuántos errores y avisos se guardan: de ahí en adelante solo se
+ *   cuentan (`errorCount()`, `warningCount()`), y cada mensaje se trunca a 200 caracteres.
+ *   Un archivo hostil no puede gastar más memoria o tiempo que esos topes.
+ * - **URL.** Se descarta (con un aviso) una `URL:` que no sea relativa ni `http`, `https`,
+ *   `mailto` o `tel`: un `javascript:` en un enlace de la interfaz sería un XSS.
  *
  * Opciones: `strict` (false), `uidDomain` (null), `untitled` («(sin título)»: el título
- * de un evento sin SUMMARY).
+ * de un evento sin SUMMARY), `maxBytes` (`ical.max_bytes`, 5 MB), `maxEvents`
+ * (`ical.max_events`, 10 000), `maxErrors` (`ical.max_errors`, 100) e `idPrefix` (''):
+ * un prefijo para el `id` y el `recurrenceOf`, para que el UID de un archivo ajeno no
+ * choque con el id de un evento propio al mezclar fuentes (`'ics:'`).
  */
 final class ICalReader
 {
-    private const OPTIONS = ['strict', 'uidDomain', 'untitled'];
+    private const OPTIONS = ['strict', 'uidDomain', 'untitled', 'maxBytes', 'maxEvents', 'maxErrors', 'idPrefix'];
+
+    private const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
+
+    private const DEFAULT_MAX_EVENTS = 10_000;
+
+    private const DEFAULT_MAX_ERRORS = 100;
+
+    /** Caracteres de un mensaje de error o aviso: lo demás lo pone el archivo, que no es de fiar. */
+    private const MESSAGE_LENGTH = 200;
+
+    /**
+     * Lo que ocupa como mínimo, en bytes, una propiedad o un componente de los que se guardan. Acota
+     * cuántos se guardan según `maxBytes` (con 5 MB, 218 000): cada uno es un objeto de unos 250 bytes,
+     * y un archivo de líneas de tres bytes sería, sin tope, diez veces su tamaño en memoria.
+     */
+    private const MIN_ITEM_BYTES = 24;
+
+    /**
+     * Niveles de componentes anidados. Un archivo real llega a 3 (VCALENDAR > VEVENT > VALARM);
+     * uno de 450 000 BEGIN seguidos tumba a PHP al liberarlo, que lo hace recursivamente.
+     */
+    private const MAX_DEPTH = 16;
+
+    /** ATTENDEE que se leen de un VEVENT: cada uno es un array en `meta`. */
+    private const MAX_ATTENDEES = 1_000;
+
+    /** EXDATE que se leen de un VEVENT: cada uno es un objeto, y una línea de 5 MB son 300 000. */
+    private const MAX_EXDATES = 5_000;
+
+    /** Esquemas de una `URL:` que se aceptan, además de una ruta relativa. */
+    private const URL_SCHEMES = ['http', 'https', 'mailto', 'tel'];
 
     /** Componentes que no pueden contener a otro igual: un BEGIN de uno de ellos cierra a la fuerza el anterior. */
     private const BLOCKS = ['VEVENT', 'VTODO', 'VJOURNAL', 'VFREEBUSY', 'VTIMEZONE'];
@@ -49,24 +91,44 @@ final class ICalReader
     /** @var list<string> */
     private array $warnings = [];
 
+    private int $errorCount = 0;
+
+    private int $warningCount = 0;
+
+    private int $maxErrors = self::DEFAULT_MAX_ERRORS;
+
     private ?string $calendarName = null;
 
     private bool $recoded = false;
 
+    /** @var ?array{line: int, message: string} Por qué se dejó de leer antes del final (un tope), si pasó. */
+    private ?array $stopped = null;
+
     /**
-     * @param  array{strict?: bool, uidDomain?: ?string, untitled?: string}  $options
+     * @param  array{strict?: bool, uidDomain?: ?string, untitled?: string, maxBytes?: int, maxEvents?: int, maxErrors?: int, idPrefix?: string}  $options
      * @return list<CalendarEvent>
      *
-     * @throws ICalException Si no es un archivo iCalendar, o en el primer error con `strict`.
+     * @throws ICalException Si no es un archivo iCalendar, pesa más de `maxBytes`, o en el primer error con `strict`.
      */
     public function read(string $ics, array $options = []): array
     {
         $o = $this->options($options);
         $this->errors = $this->warnings = [];
+        $this->errorCount = $this->warningCount = 0;
+        $this->maxErrors = $o['maxErrors'];
         $this->calendarName = null;
         $this->recoded = false;
+        $this->stopped = null;
 
-        $calendars = $this->parse($ics);
+        if (strlen($ics) > $o['maxBytes']) {
+            throw new ICalException(sprintf(
+                'El archivo pesa %s y el máximo que se lee es %s (opción maxBytes de ICalReader, o `ical.max_bytes` en el config).',
+                self::size(strlen($ics)),
+                self::size($o['maxBytes']),
+            ));
+        }
+
+        $calendars = $this->parse($ics, $o);
 
         if ($calendars === []) {
             throw new ICalException('El contenido no es un archivo iCalendar: no se encontró BEGIN:VCALENDAR.');
@@ -79,19 +141,22 @@ final class ICalReader
             foreach ($calendar->problems as $problem) {
                 // Un archivo truncado se lee hasta donde llega; con `strict` es un error.
                 if ($o['strict']) {
-                    throw $problem;
+                    throw new ICalException($problem['message'], $problem['line']);
                 }
 
-                $this->warnings[] = $problem->getMessage();
+                $this->warn($problem['message']);
             }
 
+            // Los que no cupieron en el componente: solo se cuentan.
+            $this->warningCount += $calendar->dropped;
+
             if (($version = $calendar->first('VERSION')) !== null && trim($version->value) !== '2.0') {
-                $this->warnings[] = "Línea {$version->line}: VERSION «".trim($version->value).'» no es 2.0; se lee como iCalendar 2.0.';
+                $this->warn("Línea {$version->line}: VERSION «".trim($version->value).'» no es 2.0; se lee como iCalendar 2.0.');
             }
 
             $this->calendarName ??= ($name = $calendar->first('X-WR-CALNAME')) !== null ? trim(Text::unescape($name->value)) : null;
 
-            $resolver = new TimezoneResolver(fn (string $message) => $this->warnings[] = $message);
+            $resolver = new TimezoneResolver(fn (string $message) => $this->warn($message));
 
             foreach ($calendar->children as $child) {
                 if ($child->name !== 'VTIMEZONE') {
@@ -102,7 +167,7 @@ final class ICalReader
                     $resolver->define(TimezoneDefinition::fromComponent($child));
                 } catch (ICalException $e) {
                     // Solo importa si algún evento usa ese TZID, y entonces el error sale con el evento.
-                    $this->warnings[] = $e->getMessage();
+                    $this->warn($e->getMessage());
                 }
             }
 
@@ -118,13 +183,13 @@ final class ICalReader
                         throw $e;
                     }
 
-                    $this->errors[] = $e->getMessage();
+                    $this->fail($e->getMessage());
 
                     continue;
                 }
 
                 if (isset($seen[(string) $event->id])) {
-                    $this->warnings[] = "Línea {$child->line}: el UID «{$event->id}» está repetido; los dos eventos se conservan.";
+                    $this->warn("Línea {$child->line}: el UID «{$event->id}» está repetido; los dos eventos se conservan.");
                 }
 
                 $seen[(string) $event->id] = true;
@@ -132,11 +197,21 @@ final class ICalReader
             }
         }
 
+        // Se dejó de leer a medias: lo que queda sin leer es un error, no un aviso (faltan eventos).
+        if ($this->stopped !== null) {
+            if ($o['strict']) {
+                throw new ICalException($this->stopped['message'], $this->stopped['line']);
+            }
+
+            $this->fail($this->stopped['message']);
+        }
+
         return $events;
     }
 
     /**
-     * Los VEVENT que se saltaron en la última lectura, cada uno con su línea.
+     * Los VEVENT que se saltaron en la última lectura, cada uno con su línea. Como mucho
+     * `maxErrors`: los demás están en `errorCount()`.
      *
      * @return list<string>
      */
@@ -147,12 +222,36 @@ final class ICalReader
 
     /**
      * Lo que se leyó con una salvedad: una zona resuelta por su VTIMEZONE, un RDATE ignorado…
+     * Como mucho `maxErrors`: los demás están en `warningCount()`.
      *
      * @return list<string>
      */
     public function warnings(): array
     {
         return $this->warnings;
+    }
+
+    /** Cuántos errores hubo en la última lectura, también los que pasaron de `maxErrors` y no se guardaron. */
+    public function errorCount(): int
+    {
+        return $this->errorCount;
+    }
+
+    /** Cuántos avisos hubo en la última lectura, también los que pasaron de `maxErrors` y no se guardaron. */
+    public function warningCount(): int
+    {
+        return $this->warningCount;
+    }
+
+    /**
+     * El tamaño máximo de archivo que se lee con estas opciones. `ICalSource` lo pregunta para
+     * no cargar en memoria un archivo de gigas antes de que `read()` lo rechace.
+     *
+     * @param  array<string, mixed>  $options
+     */
+    public function maxBytes(array $options = []): int
+    {
+        return $this->options($options)['maxBytes'];
     }
 
     /** El `X-WR-CALNAME` del último archivo leído. */
@@ -167,15 +266,27 @@ final class ICalReader
      * El archivo como árbol de componentes. Un BEGIN sin su END no tumba el resto: el
      * componente queda marcado como roto y se sigue leyendo.
      *
+     * Una pasada y lineal: para saber si un END tiene su BEGIN se lleva la cuenta de los
+     * componentes abiertos por nombre, en vez de buscarlo recorriendo la pila (35 000 pares
+     * desparejados eran 12 s).
+     *
+     * @param  array{maxEvents: int, maxBytes: int, maxErrors: int}  $o
      * @return list<Component> Los VCALENDAR.
      */
-    private function parse(string $ics): array
+    private function parse(string $ics, array $o): array
     {
-        $ics = preg_replace('/^\xEF\xBB\xBF/', '', $ics);
+        if (str_starts_with($ics, "\xEF\xBB\xBF")) {
+            $ics = substr($ics, 3);
+        }
+
         $roots = [];
         $stack = [];
+        $open = [];
+        $events = 0;
+        $items = 0;
+        $maxItems = intdiv($o['maxBytes'], self::MIN_ITEM_BYTES);
 
-        foreach (Text::unfold($ics) as [$no, $text]) {
+        foreach (Text::lines($ics) as [$no, $text]) {
             if (trim($text) === '') {
                 continue;
             }
@@ -186,14 +297,45 @@ final class ICalReader
                 $text = $this->recode($text);
             }
 
-            try {
-                $line = ContentLine::parse($text, $no);
-            } catch (ICalException $e) {
+            $line = ContentLine::tryParse($text, $no, $error);
+
+            if ($line === null) {
                 if ($stack !== []) {
-                    $stack[array_key_last($stack)]->problems[] = $e;
+                    // De un VEVENT solo hace falta la primera línea mala; de un VCALENDAR, cada una es un aviso.
+                    $top = $stack[array_key_last($stack)];
+                    $top->problem($error, $no, $top->name === 'VCALENDAR' ? $o['maxErrors'] : 1);
                 }
 
                 continue;
+            }
+
+            if ($line->name === 'END') {
+                $name = strtoupper(trim($line->value));
+
+                if (($open[$name] ?? 0) === 0) {
+                    $this->warn("Línea {$no}: END:{$name} sin su BEGIN; se ignora.");
+
+                    continue;
+                }
+
+                // Lo que quedó abierto entre el BEGIN de este END y él mismo está roto.
+                while ($stack[array_key_last($stack)]->name !== $name) {
+                    $broken = array_pop($stack);
+                    $open[$broken->name]--;
+                    $broken->unclosed("Línea {$broken->line}: el {$broken->name} no se cierra (falta END:{$broken->name}).", $broken->line);
+                }
+
+                array_pop($stack);
+                $open[$name]--;
+
+                continue;
+            }
+
+            // Cada componente y cada propiedad que se guarda es un objeto en memoria: acotados por el tamaño permitido.
+            if (++$items > $maxItems) {
+                $this->stopped = ['line' => $no, 'message' => "Línea {$no}: el archivo tiene demasiadas líneas para su tamaño máximo; se dejó de leer aquí."];
+
+                break;
             }
 
             if ($line->name === 'BEGIN') {
@@ -202,8 +344,21 @@ final class ICalReader
                 // Un VEVENT sin END seguido de otro BEGIN:VEVENT: el primero está roto, no contiene al segundo.
                 while ($stack !== [] && in_array($stack[array_key_last($stack)]->name, self::BLOCKS, true)
                     && (in_array($name, self::BLOCKS, true) || $name === 'VCALENDAR')) {
-                    $open = array_pop($stack);
-                    array_unshift($open->problems, new ICalException("Línea {$open->line}: el {$open->name} no se cierra (falta END:{$open->name}).", $open->line));
+                    $broken = array_pop($stack);
+                    $open[$broken->name]--;
+                    $broken->unclosed("Línea {$broken->line}: el {$broken->name} no se cierra (falta END:{$broken->name}).", $broken->line);
+                }
+
+                if ($name === 'VEVENT' && ++$events > $o['maxEvents']) {
+                    $this->stopped = ['line' => $no, 'message' => "Línea {$no}: el archivo tiene más de {$o['maxEvents']} VEVENT (opción maxEvents); se dejó de leer aquí."];
+
+                    break;
+                }
+
+                if (count($stack) >= self::MAX_DEPTH) {
+                    $this->stopped = ['line' => $no, 'message' => 'Línea '.$no.': los componentes están anidados a más de '.self::MAX_DEPTH.' niveles; se dejó de leer aquí.'];
+
+                    break;
                 }
 
                 $component = new Component($name, $no);
@@ -215,33 +370,7 @@ final class ICalReader
                 }
 
                 $stack[] = $component;
-
-                continue;
-            }
-
-            if ($line->name === 'END') {
-                $name = strtoupper(trim($line->value));
-                $index = null;
-
-                for ($i = count($stack) - 1; $i >= 0; $i--) {
-                    if ($stack[$i]->name === $name) {
-                        $index = $i;
-                        break;
-                    }
-                }
-
-                if ($index === null) {
-                    $this->warnings[] = "Línea {$no}: END:{$name} sin su BEGIN; se ignora.";
-
-                    continue;
-                }
-
-                while (count($stack) - 1 > $index) {
-                    $open = array_pop($stack);
-                    array_unshift($open->problems, new ICalException("Línea {$open->line}: el {$open->name} no se cierra (falta END:{$open->name}).", $open->line));
-                }
-
-                array_pop($stack);
+                $open[$name] = ($open[$name] ?? 0) + 1;
 
                 continue;
             }
@@ -251,18 +380,53 @@ final class ICalReader
             }
         }
 
-        foreach ($stack as $open) {
-            array_unshift($open->problems, new ICalException("Línea {$open->line}: el {$open->name} no se cierra (falta END:{$open->name}); el archivo parece truncado.", $open->line));
+        // Si se dejó de leer por un tope, lo que sigue abierto no es un archivo truncado.
+        if ($this->stopped === null) {
+            foreach ($stack as $unclosed) {
+                $unclosed->unclosed("Línea {$unclosed->line}: el {$unclosed->name} no se cierra (falta END:{$unclosed->name}); el archivo parece truncado.", $unclosed->line);
+            }
         }
 
         return array_values(array_filter($roots, fn (Component $c) => $c->name === 'VCALENDAR'));
+    }
+
+    /** Un aviso: se guardan como mucho `maxErrors`, truncados; los demás solo se cuentan. */
+    private function warn(string $message): void
+    {
+        $this->warningCount++;
+
+        if (count($this->warnings) < $this->maxErrors) {
+            $this->warnings[] = self::truncate($message);
+        }
+    }
+
+    /** Un error (un VEVENT que se salta): lo mismo que `warn()`. */
+    private function fail(string $message): void
+    {
+        $this->errorCount++;
+
+        if (count($this->errors) < $this->maxErrors) {
+            $this->errors[] = self::truncate($message);
+        }
+    }
+
+    private static function truncate(string $message): string
+    {
+        return strlen($message) > self::MESSAGE_LENGTH && mb_strlen($message) > self::MESSAGE_LENGTH
+            ? mb_substr($message, 0, self::MESSAGE_LENGTH - 1).'…'
+            : $message;
+    }
+
+    private static function size(int $bytes): string
+    {
+        return $bytes >= 1_048_576 ? round($bytes / 1_048_576, 1).' MB' : round($bytes / 1024, 1).' KB';
     }
 
     private function recode(string $text): string
     {
         if (! $this->recoded) {
             $this->recoded = true;
-            $this->warnings[] = 'El archivo no está en UTF-8; se interpretó como Windows-1252.';
+            $this->warn('El archivo no está en UTF-8; se interpretó como Windows-1252.');
         }
 
         return mb_convert_encoding($text, 'UTF-8', 'Windows-1252');
@@ -271,14 +435,14 @@ final class ICalReader
     // ── Eventos ────────────────────────────────────────────────────────────
 
     /**
-     * @param  array{strict: bool, uidDomain: ?string, untitled: string}  $o
+     * @param  array{strict: bool, uidDomain: ?string, untitled: string, idPrefix: string}  $o
      *
      * @throws ICalException
      */
     private function event(Component $v, TimezoneResolver $tz, array $o): CalendarEvent
     {
         if ($v->problems !== []) {
-            throw $v->problems[0];
+            throw new ICalException($v->problems[0]['message'], $v->problems[0]['line']);
         }
 
         $startLine = $v->first('DTSTART')
@@ -313,7 +477,7 @@ final class ICalReader
 
         if ($rules !== []) {
             if (count($rules) > 1) {
-                $this->warnings[] = "Línea {$rules[1]->line}: el VEVENT tiene varios RRULE; solo se usa el primero.";
+                $this->warn("Línea {$rules[1]->line}: el VEVENT tiene varios RRULE; solo se usa el primero.");
             }
 
             $rrule = $this->rule($rules[0], $start);
@@ -321,7 +485,7 @@ final class ICalReader
 
         foreach (['RDATE', 'EXRULE'] as $name) {
             if (($line = $v->first($name)) !== null) {
-                $this->warnings[] = "Línea {$line->line}: {$name} no se puede representar y se ignora; la serie puede mostrar ocurrencias de más o de menos.";
+                $this->warn("Línea {$line->line}: {$name} no se puede representar y se ignora; la serie puede mostrar ocurrencias de más o de menos.");
             }
         }
 
@@ -329,9 +493,17 @@ final class ICalReader
 
         foreach ($v->all('EXDATE') as $line) {
             foreach (explode(',', $line->value) as $piece) {
-                if (trim($piece) !== '') {
-                    $exdates[] = $this->date(new ContentLine('EXDATE', $line->params, trim($piece), $line->line), $tz)->toEventValue();
+                if (trim($piece) === '') {
+                    continue;
                 }
+
+                // Cada EXDATE es un objeto, y el expansor los compara en cada render.
+                if (count($exdates) >= self::MAX_EXDATES) {
+                    $this->warn("Línea {$line->line}: el VEVENT tiene más de ".self::MAX_EXDATES.' EXDATE; se ignoran los demás.');
+                    break 2;
+                }
+
+                $exdates[] = $this->date(new ContentLine('EXDATE', $line->params, trim($piece), $line->line), $tz)->toEventValue();
             }
         }
 
@@ -341,18 +513,18 @@ final class ICalReader
             $recurrence = $this->date($line, $tz);
 
             if (($range = $line->param('RANGE')) !== null) {
-                $this->warnings[] = "Línea {$line->line}: RECURRENCE-ID;RANGE={$range} está obsoleto y no se soporta; se trata como una sola ocurrencia.";
+                $this->warn("Línea {$line->line}: RECURRENCE-ID;RANGE={$range} está obsoleto y no se soporta; se trata como una sola ocurrencia.");
             }
 
             if ($rrule !== null) {
-                $this->warnings[] = "Línea {$line->line}: una ocurrencia modificada no puede llevar RRULE; se ignora.";
+                $this->warn("Línea {$line->line}: una ocurrencia modificada no puede llevar RRULE; se ignora.");
                 $rrule = null;
                 $exdates = [];
             }
         }
 
         if ($exdates !== [] && $rrule === null) {
-            $this->warnings[] = 'Línea '.$v->first('EXDATE')->line.': EXDATE sin RRULE no excluye nada; se ignora.';
+            $this->warn('Línea '.$v->first('EXDATE')->line.': EXDATE sin RRULE no excluye nada; se ignora.');
             $exdates = [];
         }
 
@@ -367,10 +539,12 @@ final class ICalReader
 
             // Sin UID no hay id estable entre lecturas: se deriva del contenido.
             $uid = 'ical-'.substr(sha1($title.'|'.$startLine->value.'|'.($rrule ?? '')), 0, 12);
-            $this->warnings[] = "Línea {$v->line}: el VEVENT no tiene UID; se le dio el id «{$uid}».";
+            $this->warn("Línea {$v->line}: el VEVENT no tiene UID; se le dio el id «{$uid}».");
         }
 
-        $seriesId = $this->id($uid, $o['uidDomain']);
+        // El prefijo va delante del id y del recurrenceOf: sin él, un UID `1` de un archivo ajeno
+        // y el evento `1` de la base de datos son el mismo para el colector.
+        $seriesId = $o['idPrefix'].$this->id($uid, $o['uidDomain']);
         $id = $recurrence !== null ? $seriesId.'#'.$recurrence->raw : $seriesId;
 
         $resources = [];
@@ -382,6 +556,11 @@ final class ICalReader
         $line = $v->first('X-KORE-COLOR') ?? $v->first('COLOR');
         $color = $line !== null ? trim(Text::unescape($line->value)) : '';
         $url = ($line = $v->first('URL')) !== null ? trim($line->value) : '';
+
+        if ($url !== '' && ! self::safeUrl($url)) {
+            $this->warn("Línea {$line->line}: la URL «".self::preview($url).'» no es relativa ni http, https, mailto o tel; se descarta.');
+            $url = '';
+        }
 
         try {
             return CalendarEvent::fromArray([
@@ -402,6 +581,32 @@ final class ICalReader
         } catch (InvalidArgumentException $e) {
             throw new ICalException("Línea {$v->line}: evento «{$id}»: {$e->getMessage()}", $v->line, $e);
         }
+    }
+
+    /**
+     * Una URL que un enlace de la interfaz puede llevar: relativa o con un esquema de la lista.
+     * Todo lo demás (`javascript:`, `data:`, `vbscript:`…) se descarta. Se mira como lo haría
+     * un navegador, que ignora tabuladores y saltos dentro de la URL (`java\tscript:`), y se
+     * es estricto con lo ambiguo: si antes de la primera `/`, `?` o `#` hay un `:`, es un esquema.
+     */
+    private static function safeUrl(string $url): bool
+    {
+        if (preg_match('/[\x00-\x1F\x7F]/', $url)) {
+            return false;
+        }
+
+        $head = substr($url, 0, strcspn($url, '/?#'));
+
+        if (! str_contains($head, ':')) {
+            return true;
+        }
+
+        return in_array(strtolower(substr($head, 0, strpos($head, ':'))), self::URL_SCHEMES, true);
+    }
+
+    private static function preview(string $text): string
+    {
+        return mb_strlen($text) > 60 ? mb_substr($text, 0, 57).'…' : $text;
     }
 
     private function id(string $uid, ?string $domain): string
@@ -448,6 +653,11 @@ final class ICalReader
         }
 
         if (($attendees = $v->all('ATTENDEE')) !== []) {
+            if (count($attendees) > self::MAX_ATTENDEES) {
+                $this->warn("Línea {$attendees[self::MAX_ATTENDEES]->line}: el VEVENT tiene más de ".self::MAX_ATTENDEES.' ATTENDEE; se ignoran los demás.');
+                $attendees = array_slice($attendees, 0, self::MAX_ATTENDEES);
+            }
+
             $meta['attendees'] = array_map(self::person(...), $attendees);
         }
 
@@ -571,7 +781,7 @@ final class ICalReader
 
     /**
      * @param  array<string, mixed>  $options
-     * @return array{strict: bool, uidDomain: ?string, untitled: string}
+     * @return array{strict: bool, uidDomain: ?string, untitled: string, maxBytes: int, maxEvents: int, maxErrors: int, idPrefix: string}
      */
     private function options(array $options): array
     {
@@ -589,6 +799,34 @@ final class ICalReader
             'strict' => (bool) ($options['strict'] ?? false),
             'uidDomain' => isset($options['uidDomain']) ? (string) $options['uidDomain'] : null,
             'untitled' => (string) ($options['untitled'] ?? '(sin título)'),
+            'maxBytes' => self::limit($options, 'maxBytes', 'max_bytes', self::DEFAULT_MAX_BYTES, 1),
+            'maxEvents' => self::limit($options, 'maxEvents', 'max_events', self::DEFAULT_MAX_EVENTS, 1),
+            'maxErrors' => self::limit($options, 'maxErrors', 'max_errors', self::DEFAULT_MAX_ERRORS, 0),
+            'idPrefix' => (string) ($options['idPrefix'] ?? ''),
         ];
+    }
+
+    /**
+     * Un tope: la opción, o `ical.{clave}` del config, o el valor de serie. Un entero de al menos `$min`.
+     *
+     * @param  array<string, mixed>  $options
+     */
+    private static function limit(array $options, string $option, string $key, int $default, int $min): int
+    {
+        if (isset($options[$option])) {
+            if (! is_int($options[$option]) || $options[$option] < $min) {
+                throw new InvalidArgumentException("ICalReader: `{$option}` es un entero de al menos {$min}.");
+            }
+
+            return $options[$option];
+        }
+
+        try {
+            $value = function_exists('config') ? config('kore-calendar.ical.'.$key) : null;
+        } catch (Throwable) {
+            $value = null;
+        }
+
+        return is_numeric($value) && (int) $value >= $min ? (int) $value : $default;
     }
 }

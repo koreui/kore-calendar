@@ -37,17 +37,27 @@ final class ContentLine
      */
     public static function parse(string $raw, int $line): self
     {
-        $length = strlen($raw);
-        $i = 0;
+        $error = null;
 
-        while ($i < $length && $raw[$i] !== ';' && $raw[$i] !== ':') {
-            $i++;
-        }
+        return self::tryParse($raw, $line, $error) ?? throw new ICalException($error, $line);
+    }
+
+    /**
+     * Lo mismo sin lanzar: `null` y el motivo en `$error`. El lector lo usa para las líneas
+     * que no se pueden leer, que en un archivo hostil son cientos de miles, y una excepción
+     * cada una cuesta su traza.
+     */
+    public static function tryParse(string $raw, int $line, ?string &$error = null): ?self
+    {
+        $length = strlen($raw);
+        $i = strcspn($raw, ';:');
 
         $name = strtoupper(trim(substr($raw, 0, $i)));
 
-        if ($i >= $length || $name === '' || ! preg_match('/^[A-Z0-9.-]+$/', $name)) {
-            throw new ICalException("Línea {$line}: no es una propiedad iCalendar válida (se espera NOMBRE:valor): «".self::preview($raw).'».', $line);
+        if ($i >= $length || $name === '' || ! preg_match('/^[A-Z0-9.-]+$/D', $name)) {
+            $error = "Línea {$line}: no es una propiedad iCalendar válida (se espera NOMBRE:valor): «".self::preview($raw).'».';
+
+            return null;
         }
 
         $params = [];
@@ -55,10 +65,7 @@ final class ContentLine
         while ($i < $length && $raw[$i] === ';') {
             $i++;
             $start = $i;
-
-            while ($i < $length && $raw[$i] !== '=' && $raw[$i] !== ';' && $raw[$i] !== ':') {
-                $i++;
-            }
+            $i += strcspn($raw, '=;:', $i);
 
             $paramName = strtoupper(trim(substr($raw, $start, $i - $start)));
 
@@ -75,17 +82,16 @@ final class ContentLine
                     $close = strpos($raw, '"', $i + 1);
 
                     if ($close === false) {
-                        throw new ICalException("Línea {$line}: el parámetro {$paramName} abre comillas y no las cierra.", $line);
+                        $error = "Línea {$line}: el parámetro ".self::preview($paramName).' abre comillas y no las cierra.';
+
+                        return null;
                     }
 
                     $values[] = substr($raw, $i + 1, $close - $i - 1);
                     $i = $close + 1;
                 } else {
                     $from = $i;
-
-                    while ($i < $length && $raw[$i] !== ',' && $raw[$i] !== ';' && $raw[$i] !== ':') {
-                        $i++;
-                    }
+                    $i += strcspn($raw, ',;:', $i);
 
                     $values[] = substr($raw, $from, $i - $from);
                 }
@@ -98,7 +104,9 @@ final class ContentLine
         }
 
         if ($i >= $length || $raw[$i] !== ':') {
-            throw new ICalException("Línea {$line}: la propiedad {$name} no tiene «:» antes del valor.", $line);
+            $error = "Línea {$line}: la propiedad {$name} no tiene «:» antes del valor.";
+
+            return null;
         }
 
         return new self($name, $params, substr($raw, $i + 1), $line);

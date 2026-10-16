@@ -93,7 +93,13 @@ Las claves anidadas se escriben con puntos (`time.slot_duration`), igual que en 
 
 | Clave | Tipo | Default | Qué hace |
 |---|---|---|---|
-| `recurrence.max_occurrences` | `int` | `1000` | Ocurrencias máximas por serie y vista. Pasado el tope se corta y se avisa en el log (`logger()->warning`) |
+| `recurrence.max_occurrences` | `int` | `1000` | Ocurrencias que se **dibujan** por serie y vista. Pasado el tope se corta y se avisa en el log (`logger()->warning`) |
+| `recurrence.max_total_occurrences` | `int` | `5000` | Ocurrencias que se dibujan por render, sumando todas las series |
+| `recurrence.max_iterations` | `int` | `50000` | Ocurrencias que se **recorren** por serie para llegar a la vista. Una serie que no se puede adelantar a la vista (`COUNT`, `MONTHLY`, `YEARLY`, `BYSETPOS`) se corta aquí |
+| `recurrence.max_total_iterations` | `int` | `250000` | Lo mismo, sumando todas las series de un render |
+| `ical.max_bytes` | `int` | `5242880` | Tamaño máximo de un `.ics` que lee `ICalReader` (5 MB) |
+| `ical.max_events` | `int` | `10000` | VEVENT que se leen como mucho |
+| `ical.max_errors` | `int` | `100` | Errores y avisos que se guardan; el resto solo se cuenta (`errorCount()`, `warningCount()`) |
 
 ### `interaction`
 
@@ -163,7 +169,7 @@ $this->mobileView('day');            // en configure()
 `configure()` se ejecuta en cada petición (en `booted()`). Todos los métodos son `protected`, devuelven `static` y se encadenan.
 
 ```php
-public function configure(): void
+protected function configure(): void
 {
     $this->views(['week', 'month'])
         ->timezone(auth()->user()->timezone)

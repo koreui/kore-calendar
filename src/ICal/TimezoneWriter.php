@@ -120,6 +120,6 @@ final class TimezoneWriter
     {
         $name = $zone->getName();
 
-        return preg_match('/^[+-]\d{2}:\d{2}$/', $name) ? 'UTC'.self::offset($offset) : $name;
+        return preg_match('/^[+-]\d{2}:\d{2}$/D', $name) ? 'UTC'.self::offset($offset) : $name;
     }
 }

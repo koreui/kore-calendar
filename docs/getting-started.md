@@ -110,7 +110,7 @@ Un evento con `rrule` es una **serie**: el calendario genera sus ocurrencias den
   - Los `exdates` y los `recurrenceId` se comparan con la ocurrencia **en la misma representación** (una hora de pared, o un instante), no como texto: un `exdate` con `Z` excluye en una serie con zona. En una flotante, una hora con zona se lleva a la hora de pared de la vista.
 - **`UNTIL`.** RFC 5545 lo exige en UTC cuando el inicio lleva hora, pero lo natural es escribir `UNTIL=20261231` («hasta ese día»), y se acepta: una fecha sin hora es hasta el final de ese día, inclusive; una hora sin `Z` (`20261231T100000`) es de pared (flotante) o de la zona de la serie; con `Z` es UTC.
 - **Una ocurrencia que empezó antes de la vista y entra en ella también se dibuja** (un evento de dos días que cruza el borde).
-- **Tope.** `recurrence.max_occurrences` (1 000) por serie y vista: una regla `FREQ=MINUTELY` no tumba la página. Pasado el tope se avisa en el log y se cortan.
+- **Topes.** La expansión empieza en la vista, no en el primer `start` de la serie, así que una serie diaria de hace diez años cuesta lo mismo que una de hoy. Además hay topes de ocurrencias dibujadas y recorridas, por serie y por render (`recurrence.max_*`, ver [configuration.md](configuration.md)): una regla hostil (`FREQ=SECONDLY` desde hace años) no agota la memoria. Pasado un tope se avisa en el log y se corta.
 - **`id` compartido.** Todas las ocurrencias de una serie tienen el `id` de la serie; lo que las distingue es el `instanceId` (`"{id}:{inicio original}"`), que el calendario pinta en `data-kore-instance`.
 
 Editar una ocurrencia pregunta a qué alcanza el cambio: [Series recurrentes](kore-calendar.md#series-recurrentes-editar-por-alcance).

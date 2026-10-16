@@ -32,6 +32,10 @@ use KoreUi\Calendar\Events\EventSource;
  *
  * Los VEVENT que no se pudieron leer se quedan en `errors()`, y las salvedades en
  * `warnings()` (ver `ICalReader`).
+ *
+ * Las opciones son las de `ICalReader`, con sus topes (`maxBytes`, `maxEvents`, `maxErrors`).
+ * Si el `.ics` se mezcla con eventos de otras fuentes, `idPrefix` (`'ics:'`) evita que el
+ * UID de un evento de archivo choque con el id de uno propio.
  */
 final class ICalSource implements EventSource
 {
@@ -50,7 +54,7 @@ final class ICalSource implements EventSource
      * un lector de archivos del servidor (`/ruta/.env`), y sus líneas podrían salir en
      * `errors()`. Leer del disco tiene que ser una decisión del código, no del dato.
      *
-     * @param  array{strict?: bool, uidDomain?: ?string, untitled?: string}  $options
+     * @param  array{strict?: bool, uidDomain?: ?string, untitled?: string, maxBytes?: int, maxEvents?: int, maxErrors?: int, idPrefix?: string}  $options
      */
     private function __construct(private readonly ?string $path, ?string $content, private readonly array $options)
     {
@@ -61,7 +65,7 @@ final class ICalSource implements EventSource
      * El contenido de un `.ics` (un archivo subido, una respuesta HTTP). Nunca se
      * interpreta como ruta.
      *
-     * @param  array{strict?: bool, uidDomain?: ?string, untitled?: string}  $options  Las de `ICalReader::read()`.
+     * @param  array{strict?: bool, uidDomain?: ?string, untitled?: string, maxBytes?: int, maxEvents?: int, maxErrors?: int, idPrefix?: string}  $options  Las de `ICalReader::read()`.
      */
     public static function fromString(string $ics, array $options = []): self
     {
@@ -71,7 +75,7 @@ final class ICalSource implements EventSource
     /**
      * Un `.ics` en disco. Se lee una vez, la primera vez que se piden eventos.
      *
-     * @param  array{strict?: bool, uidDomain?: ?string, untitled?: string}  $options  Las de `ICalReader::read()`.
+     * @param  array{strict?: bool, uidDomain?: ?string, untitled?: string, maxBytes?: int, maxEvents?: int, maxErrors?: int, idPrefix?: string}  $options  Las de `ICalReader::read()`.
      */
     public static function fromFile(string $path, array $options = []): self
     {
@@ -146,18 +150,20 @@ final class ICalSource implements EventSource
             return;
         }
 
+        $reader = new ICalReader;
         $content = $this->content;
 
         if ($content === null) {
-            $content = file_get_contents($this->path);
+            // Un byte de más que el tope: el lector lo rechaza, y un archivo de gigas no llega a memoria.
+            $content = file_get_contents($this->path, false, null, 0, $reader->maxBytes($this->options) + 1);
 
             if ($content === false) {
                 throw new InvalidArgumentException("ICalSource: no se pudo leer «{$this->path}».");
             }
         }
 
-        $this->reader = new ICalReader;
-        $this->events = $this->reader->read($content, $this->options);
+        $this->reader = $reader;
+        $this->events = $reader->read($content, $this->options);
     }
 
     /** El instante de un valor de fecha. Una hora de pared o un día se leen en la zona de la vista. */

@@ -15,6 +15,24 @@ use KoreUi\Calendar\Time\WallClock;
 | de otros archivos (`ix`, `rc`, `ly`…).
 */
 
+/**
+ * Ejecuta `$fn` y devuelve [resultado, segundos, MB de pico de memoria sobre el punto de partida]:
+ * los tests de archivos hostiles comprueban que el coste no depende de lo hostil que sea el archivo.
+ *
+ * @return array{0: mixed, 1: float, 2: float}
+ */
+function icalMeasure(callable $fn): array
+{
+    gc_collect_cycles();
+    memory_reset_peak_usage();
+    $base = memory_get_usage();
+    $start = hrtime(true);
+
+    $result = $fn();
+
+    return [$result, (hrtime(true) - $start) / 1e9, (memory_get_peak_usage() - $base) / 1048576];
+}
+
 /** Escribe con el DTSTAMP y el dominio fijos: la salida es la misma siempre. */
 function icalWrite(iterable $events, array $options = []): string
 {

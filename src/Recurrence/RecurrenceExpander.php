@@ -13,7 +13,7 @@ use KoreUi\Calendar\Events\EventNormalizer;
 use KoreUi\Calendar\Time\DateRange;
 use KoreUi\Calendar\Time\Marker;
 use KoreUi\Calendar\Time\WallClock;
-use RRule\RRule;
+use Throwable;
 
 /**
  * Expande una serie (`rrule`) en sus ocurrencias dentro de un rango.
@@ -33,21 +33,56 @@ use RRule\RRule;
  * Las exclusiones (`exdates`) y los `recurrenceId` de las ocurrencias modificadas
  * se comparan en esa misma representación, con `key()`, nunca como texto. Una
  * fecha sin hora excluye la ocurrencia de ese día, sea a la hora que sea.
+ *
+ * **Topes.** Una regla hostil (`FREQ=MINUTELY` desde 2020, `FREQ=SECONDLY;COUNT=99999999`)
+ * no puede tumbar la página, y limitar solo lo que se dibuja no basta: php-rrule recorre y
+ * guarda todo desde `DTSTART` (ver `RuleScanner`). Son cuatro, todos en `recurrence.*`:
+ *
+ * | Clave                   | Qué acota                                                        |
+ * |-------------------------|------------------------------------------------------------------|
+ * | `max_occurrences`       | Lo que se dibuja de cada serie en la vista                        |
+ * | `max_total_occurrences` | Lo mismo, sumadas todas las series del render                     |
+ * | `max_iterations`        | Lo que se recorre de cada serie desde su inicio (antes de la vista también) |
+ * | `max_total_iterations`  | Lo mismo, sumadas todas las series del render                     |
+ *
+ * Pasado cualquiera se corta lo que falta y se avisa en el log, una vez por serie (los
+ * globales, una vez por render). Los globales se llevan en un `OccurrenceBudget`: se le
+ * puede pasar uno a `expand()`; si no, el expansor usa uno por cada `DateRange` distinto,
+ * y `EventCollector::collect()` le da el mismo rango a todas sus series.
  */
 final class RecurrenceExpander
 {
+    private readonly int $maxTotalOccurrences;
+
+    private readonly int $maxIterations;
+
+    private readonly int $maxTotalIterations;
+
+    private ?DateRange $budgetRange = null;
+
+    private ?OccurrenceBudget $budget = null;
+
     public function __construct(
         private readonly WallClock $clock,
         private readonly EventNormalizer $normalizer,
         private readonly int $maxOccurrences = 1000,
-    ) {}
+        ?int $maxTotalOccurrences = null,
+        ?int $maxIterations = null,
+        ?int $maxTotalIterations = null,
+    ) {
+        $this->maxTotalOccurrences = $maxTotalOccurrences ?? RuleScanner::limit('max_total_occurrences', 5_000);
+        $this->maxIterations = $maxIterations ?? RuleScanner::limit('max_iterations', RuleScanner::MAX_ITERATIONS);
+        $this->maxTotalIterations = $maxTotalIterations ?? RuleScanner::limit('max_total_iterations', 250_000);
+    }
 
     /**
      * @param  array<string, true>  $skip  Claves (`key()`) de ocurrencias que sustituye una modificada.
+     * @param  ?OccurrenceBudget  $budget  Lo que queda del render; null = el del rango (ver la nota de la clase).
      * @return list<EventInstance>
      */
-    public function expand(CalendarEvent $series, DateRange $range, array $skip = []): array
+    public function expand(CalendarEvent $series, DateRange $range, array $skip = [], ?OccurrenceBudget $budget = null): array
     {
+        $budget ??= $this->budgetFor($range);
         $first = $this->normalizer->normalize($series->occurrence($series->start, $series->end));
         $zone = self::zoneOf($series, $first->allDay);
 
@@ -69,23 +104,45 @@ final class RecurrenceExpander
             $to = $this->clock->toInstant($range->end)->addDay()->setTimezone($zone);
         }
 
+        // Lo que cabe: el tope de la serie y lo que queda de la vista. Uno de más para saber si se pasó.
+        $room = min($this->maxOccurrences, $budget->occurrences());
+        $iterations = min($this->maxIterations, $budget->iterations());
+
         try {
-            $rule = new RRule(self::normalizeUntil($series->rrule, $zone), $dtstart);
+            $scan = RuleScanner::between(self::normalizeUntil($series->rrule, $zone), $dtstart, $from, $to, $room + 1, $iterations);
         } catch (InvalidArgumentException $e) {
             // Solo los errores de la regla: un Error (clase que falta, bug) sale
             // tal cual, o se presentaría como «regla no válida» y despistaría.
             throw new InvalidArgumentException("Evento «{$series->id}»: `rrule` no válida ({$e->getMessage()}).", 0, $e);
         }
 
-        $occurrences = $rule->getOccurrencesBetween($from, $to, $this->maxOccurrences + 1);
+        $occurrences = $scan->occurrences;
 
-        if (count($occurrences) > $this->maxOccurrences) {
+        if (count($occurrences) > $room) {
             // Una regla FREQ=MINUTELY no puede tumbar la página. Se avisa una vez y se corta.
-            if (function_exists('logger')) {
-                logger()->warning("kore-calendar: la serie «{$series->id}» tiene más de {$this->maxOccurrences} ocurrencias en la vista; se muestran las primeras.");
+            if ($room < $this->maxOccurrences) {
+                if ($budget->firstOccurrencesWarning()) {
+                    self::warn("kore-calendar: la vista llegó al tope de {$this->maxTotalOccurrences} ocurrencias de series (recurrence.max_total_occurrences); la serie «{$series->id}» y las que siguen se muestran incompletas.");
+                }
+            } else {
+                self::warn("kore-calendar: la serie «{$series->id}» tiene más de {$this->maxOccurrences} ocurrencias en la vista; se muestran las primeras.");
             }
-            $occurrences = array_slice($occurrences, 0, $this->maxOccurrences);
+
+            $occurrences = array_slice($occurrences, 0, $room);
         }
+
+        if ($scan->truncated) {
+            // Un COUNT enorme con una frecuencia alta no se puede saltar sin contar: se corta el recorrido.
+            if ($iterations < $this->maxIterations) {
+                if ($budget->firstIterationsWarning()) {
+                    self::warn("kore-calendar: la vista llegó al tope de {$this->maxTotalIterations} ocurrencias recorridas (recurrence.max_total_iterations); la serie «{$series->id}» y las que siguen se muestran incompletas.");
+                }
+            } else {
+                self::warn("kore-calendar: la serie «{$series->id}» necesita recorrer más de {$this->maxIterations} ocurrencias desde su inicio para llegar a la vista (recurrence.max_iterations); se muestra lo que se alcanzó.");
+            }
+        }
+
+        $budget->consume(count($occurrences), $scan->iterations);
 
         $excluded = [];
         foreach ($series->exdates as $exdate) {
@@ -139,13 +196,37 @@ final class RecurrenceExpander
         return $instances;
     }
 
+    /** El presupuesto del render: uno por rango (`EventCollector` pasa el mismo a todas las series de un `collect()`). */
+    private function budgetFor(DateRange $range): OccurrenceBudget
+    {
+        if ($this->budget === null || $this->budgetRange !== $range) {
+            $this->budgetRange = $range;
+            $this->budget = new OccurrenceBudget($this->maxTotalOccurrences, $this->maxTotalIterations);
+        }
+
+        return $this->budget;
+    }
+
+    private static function warn(string $message): void
+    {
+        if (! function_exists('logger')) {
+            return;
+        }
+
+        try {
+            logger()->warning($message);
+        } catch (Throwable) {
+            // Sin aplicación (fuera de Laravel) no hay a dónde avisar.
+        }
+    }
+
     /**
      * La clave de una fecha (exdate, recurrenceId) en la representación de la
      * serie: `w:` hora de pared (flotante), `i:` instante (con zona), `d:` día entero.
      */
     public static function key(CalendarEvent $series, DateTimeInterface|string $value, WallClock $clock): string
     {
-        if (is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}$/', trim($value))) {
+        if (is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}$/D', trim($value))) {
             return 'd:'.trim($value);
         }
 
@@ -156,7 +237,7 @@ final class RecurrenceExpander
             return 'w:'.$clock->toMarker($value)->ts;
         }
 
-        $instant = is_string($value) && ! preg_match('/(Z|[+-]\d{2}:?\d{2})$/i', trim($value))
+        $instant = is_string($value) && ! preg_match('/(Z|[+-]\d{2}:?\d{2})$/iD', trim($value))
             ? new DateTimeImmutable($value, $zone)
             : ($value instanceof DateTimeInterface ? $value : new DateTimeImmutable($value));
 
@@ -211,7 +292,7 @@ final class RecurrenceExpander
             return $series->start->getTimezone();
         }
 
-        if (preg_match('/(Z|[+-]\d{2}:?\d{2})$/i', trim($series->start))) {
+        if (preg_match('/(Z|[+-]\d{2}:?\d{2})$/iD', trim($series->start))) {
             return (new DateTimeImmutable($series->start))->getTimezone();
         }
 

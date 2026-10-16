@@ -9,6 +9,7 @@ use DateTimeZone;
 use InvalidArgumentException;
 use KoreUi\Calendar\Events\CalendarEvent;
 use KoreUi\Calendar\Recurrence\RecurrenceExpander;
+use KoreUi\Calendar\Recurrence\RuleScanner;
 use KoreUi\Calendar\Time\Marker;
 use KoreUi\Calendar\Time\WallClock;
 use RRule\RRule;
@@ -78,11 +79,11 @@ final class ICalWriter
     private const OPTIONS = ['name', 'uidDomain', 'dtstamp', 'defaultDuration'];
 
     /** El mismo criterio que `EventNormalizer`: un string de fecha es ISO 8601 y nada más. */
-    private const ISO = '/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/i';
+    private const ISO = '/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/iD';
 
-    private const OFFSET = '/(Z|[+-]\d{2}:?\d{2})$/i';
+    private const OFFSET = '/(Z|[+-]\d{2}:?\d{2})$/iD';
 
-    private const DATE_ONLY = '/^\d{4}-\d{2}-\d{2}$/';
+    private const DATE_ONLY = '/^\d{4}-\d{2}-\d{2}$/D';
 
     /** Años de VTIMEZONE que se añaden a una serie sin final: lo que un cliente que use ese VTIMEZONE verá bien. */
     private const OPEN_ENDED_YEARS = 10;
@@ -217,7 +218,7 @@ final class ICalWriter
             foreach ($meta['x'] as $name => $value) {
                 $name = strtoupper((string) $name);
 
-                if (preg_match('/^X-[A-Z0-9-]+$/', $name) && ! in_array($name, ['X-KORE-RESOURCES', 'X-KORE-COLOR'], true) && ($text = self::text($value)) !== null) {
+                if (preg_match('/^X-[A-Z0-9-]+$/D', $name) && ! in_array($name, ['X-KORE-RESOURCES', 'X-KORE-COLOR'], true) && ($text = self::text($value)) !== null) {
                     $lines[] = $name.':'.Text::escape($text);
                 }
             }
@@ -514,13 +515,27 @@ final class ICalWriter
         $zone = $start->dt->getTimezone();
 
         try {
-            $found = (new RRule($context['rule'], $start->dt))->getOccurrencesBetween(
+            // Con el tope de iteraciones y el inicio adelantado de `RuleScanner`: un EXDATE de un día
+            // sobre `FREQ=MINUTELY` desde 2020 no recorre tres millones de ocurrencias. Y como mucho
+            // `max_occurrences` de ese día: lo que sigue a las primeras mil no cabe en un EXDATE razonable.
+            $scan = RuleScanner::between(
+                $context['rule'],
+                $start->dt,
                 new DateTimeImmutable($day.' 00:00:00', $zone),
                 new DateTimeImmutable($day.' 23:59:59', $zone),
+                RuleScanner::limit('max_occurrences', 1000),
+                RuleScanner::limit('max_iterations', RuleScanner::MAX_ITERATIONS),
             );
         } catch (Throwable) {
             return null;
         }
+
+        // Cortó antes de llegar a ese día: no se sabe qué hay en él.
+        if ($scan->truncated && $scan->occurrences === []) {
+            return null;
+        }
+
+        $found = $scan->occurrences;
 
         return array_map(
             fn (DateTimeInterface $d) => match ($start->kind) {

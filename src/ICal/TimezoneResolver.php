@@ -5,7 +5,7 @@ namespace KoreUi\Calendar\ICal;
 use Closure;
 use DateTimeImmutable;
 use DateTimeZone;
-use Exception;
+use Throwable;
 
 /**
  * De un TZID a una zona de PHP.
@@ -35,6 +35,12 @@ final class TimezoneResolver
 {
     /** Lo que `infer()` devuelve cuando el VTIMEZONE no tiene cambios de hora. */
     private const FIXED = '*';
+
+    /** El nombre de zona más largo que se busca (`America/Argentina/ComodRivadavia` tiene 32). */
+    private const MAX_NAME = 100;
+
+    /** El mayor desplazamiento de una zona, en minutos: ±14:00. */
+    private const MAX_OFFSET_MINUTES = 14 * 60;
 
     /** Zonas de referencia por si la de la aplicación no coincide: las que más se usan en español. */
     private const PREFERRED = [
@@ -133,6 +139,12 @@ final class TimezoneResolver
 
     private function lookup(string $tzid): ?DateTimeZone
     {
+        // Ningún nombre de zona real pasa de unas decenas de caracteres, y uno de 100 000
+        // solo sirve para gastar memoria en las cachés.
+        if (strlen($tzid) > self::MAX_NAME || str_contains($tzid, "\0")) {
+            return null;
+        }
+
         // El segundo es el nombre sin el prefijo de RFC 5545 §3.2.19 (`/dominio/versión/`).
         foreach ([$tzid, preg_replace('#^/[^/]+/[^/]+/#', '', $tzid)] as $candidate) {
             if ($candidate === '') {
@@ -140,17 +152,47 @@ final class TimezoneResolver
             }
 
             try {
-                return new DateTimeZone($candidate);
-            } catch (Exception) {
-                // No es un nombre de PHP: se prueba el siguiente.
+                $zone = new DateTimeZone($candidate);
+            } catch (Throwable) {
+                // No es un nombre de PHP (DateInvalidTimeZoneException, o ValueError si lleva un NUL):
+                // se prueba el siguiente. Un TZID de un archivo no puede abortar la lectura entera.
+                continue;
             }
+
+            // PHP admite desplazamientos de hasta ±99:59 (`GMT-25:00`) y las zonas reales van de
+            // -12:00 a +14:00.
+            return self::plausible($zone) ? $zone : null;
         }
 
-        if (preg_match('/^(?:UTC|GMT)?([+-])(\d{2}):?(\d{2})?$/i', $tzid, $m)) {
-            return new DateTimeZone(sprintf('%s%s:%s', $m[1], $m[2], $m[3] ?? '00'));
+        if (preg_match('/^(?:UTC|GMT)?([+-])(\d{2}):?(\d{2})?$/iD', $tzid, $m)) {
+            // PHP normaliza `+00:60` a `+01:00`: unos minutos que no existen no se aceptan.
+            if ((int) ($m[3] ?? 0) > 59) {
+                return null;
+            }
+
+            try {
+                $zone = new DateTimeZone(sprintf('%s%s:%s', $m[1], $m[2], $m[3] ?? '00'));
+            } catch (Throwable) {
+                return null;
+            }
+
+            return self::plausible($zone) ? $zone : null;
         }
 
         return null;
+    }
+
+    /** Un desplazamiento fijo dentro de ±14:00; una zona con nombre o abreviatura siempre. */
+    private static function plausible(DateTimeZone $zone): bool
+    {
+        if (! preg_match('/^[+-]\d{2}:\d{2}$/D', $zone->getName())) {
+            return true;
+        }
+
+        $hours = (int) substr($zone->getName(), 1, 2);
+        $minutes = (int) substr($zone->getName(), 4, 2);
+
+        return $minutes <= 59 && $hours * 60 + $minutes <= self::MAX_OFFSET_MINUTES;
     }
 
     /**
