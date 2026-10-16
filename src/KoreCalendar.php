@@ -3,14 +3,34 @@
 namespace KoreUi\Calendar;
 
 use Carbon\CarbonImmutable;
+use Closure;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
+use KoreUi\Calendar\Events\CalendarEvent;
+use KoreUi\Calendar\Events\EventCollector;
+use KoreUi\Calendar\Events\EventInstance;
+use KoreUi\Calendar\Events\EventNormalizer;
 use KoreUi\Calendar\Events\Sources\CallbackSource;
+use KoreUi\Calendar\Interaction\Bounds;
+use KoreUi\Calendar\Interaction\EventMutation;
+use KoreUi\Calendar\Interaction\Events\EventMoved;
+use KoreUi\Calendar\Interaction\Events\EventResized;
+use KoreUi\Calendar\Interaction\Messages;
+use KoreUi\Calendar\Interaction\MutationBuilder;
+use KoreUi\Calendar\Interaction\MutationRejected;
+use KoreUi\Calendar\Interaction\MutationValidator;
+use KoreUi\Calendar\Interaction\Selection;
 use KoreUi\Calendar\Resources\ResourceSet;
+use KoreUi\Calendar\Time\Marker;
 use KoreUi\Calendar\Time\ViewRange;
 use KoreUi\Calendar\View\CalendarRenderer;
 use KoreUi\Calendar\View\CalendarSettings;
 use KoreUi\Calendar\View\CalendarViews;
+use KoreUi\Core\Concerns\InteractsWithFeedback;
 use Livewire\Attributes\Url;
 use Livewire\Component;
+use Throwable;
 
 /**
  * Clase base de un calendario con estado.
@@ -38,9 +58,20 @@ use Livewire\Component;
  * - Lo que se pasa a la vista lleva prefijo `kore`: las propiedades públicas del
  *   consumidor ganan sobre los datos de `view()`, y una `$calendar` suya taparía
  *   la nuestra.
+ *
+ * Interacción (`->editable()`, `->selectable()`): el navegador solo propone
+ * (`moveEvent`, `resizeEvent`, `selectRange`) y el servidor decide. Nada de lo que
+ * llega es de fiar: el evento se vuelve a buscar entre los que `events()` devuelve
+ * para la vista, el destino se vuelve a ajustar y validar, y solo entonces se
+ * llama al hook de persistencia del consumidor (`persistMove`, `persistResize`,
+ * `onDateSelect`), dentro de una transacción.
  */
 abstract class KoreCalendar extends Component
 {
+    // toast() para los motivos de rechazo. Es el mismo trait que usa el DataTable
+    // (WithBulkActions), así que el toast llega al mismo gestor del navegador.
+    use InteractsWithFeedback;
+
     #[Url(as: 'view', except: '')]
     public string $view = '';
 
@@ -120,6 +151,345 @@ abstract class KoreCalendar extends Component
         $this->timelineRow = max(0, $row);
     }
 
+    // ── Interacción (acciones públicas) ─────────────────────────────────
+    //
+    // Las tres siguen el mismo camino y en el mismo orden, porque lo que manda el
+    // navegador no es fiable (docs/calendar.md §11):
+    //
+    //   1. El evento se vuelve a buscar entre los que `events()` devuelve para la
+    //      vista dibujada. Nunca por id directo: así se respetan los scopes del
+    //      consumidor y un id ajeno no se puede mover (IDOR).
+    //   2. El destino se vuelve a ajustar (snap) y se construye la mutación.
+    //   3. Se valida: editabilidad, rango válido, solapes.
+    //   4. Se llama al hook del consumidor, dentro de una transacción.
+    //
+    // Los markers son los de `Marker::ts`: horas de pared en la zona de la vista,
+    // nunca instantes.
+
+    /**
+     * Mueve un evento (arrastrándolo, o con el teclado).
+     *
+     * @param  int  $start  Marker donde cae el INICIO del evento, no el punto donde se agarró.
+     * @param  bool  $allDay  Modalidad del destino: el carril de todo el día o una celda con hora.
+     * @param  string|int|null  $resourceId  Recurso (columna o fila) donde se soltó. `null` en las vistas sin recursos.
+     * @param  string|int|null  $fromResourceId  Recurso del que se agarró. Hace falta en un evento con varios.
+     * @return array{ok: bool, message: string} `message` es el anuncio para aria-live si `ok`, o el motivo si no.
+     */
+    public function moveEvent(string|int $id, int $start, bool $allDay, string|int|null $resourceId = null, string|int|null $fromResourceId = null): array
+    {
+        $settings = $this->koreSettingsResolved();
+
+        if (! Bounds::contains($start)) {
+            return $this->koreReject('move_rejected', Messages::get('out_of_range'));
+        }
+
+        $instances = $this->koreInstances($settings);
+        $original = self::koreFind($instances, $id);
+
+        if ($original === null) {
+            return $this->koreReject('move_rejected', Messages::get('event_not_found'), stale: true);
+        }
+
+        $resourceIds = null;
+
+        if ($resourceId !== null) {
+            // El destino tiene que existir en resources(): el cliente puede mandar cualquier id.
+            $target = $this->koreResources()->find($resourceId);
+
+            if ($target === null) {
+                return $this->koreReject('move_rejected', Messages::get('resource_not_found'));
+            }
+
+            // Con el id del recurso tal como lo conoce el ResourceSet (1 y '1' son el mismo).
+            $resourceIds = MutationBuilder::resourcesAfterDrop($original->event->resourceIds, $target->id, $fromResourceId);
+
+            if ($resourceIds === null) {
+                return $this->koreReject('move_rejected', Messages::get('invalid_change'));
+            }
+        }
+
+        $mutation = MutationBuilder::fromSettings($settings)->move($original, Marker::fromTimestamp($start), $allDay, $resourceIds);
+
+        if ($mutation->isNoop()) {
+            return $this->koreUnchanged();
+        }
+
+        $refusal = (new MutationValidator($settings))->validateMove($mutation, $instances)
+            ?? $this->korePersist(fn () => $this->persistMove($original->event, $mutation));
+
+        if ($refusal !== null) {
+            return $this->koreReject('move_rejected', $refusal);
+        }
+
+        event(new EventMoved(static::class, $original->event, $mutation));
+
+        return ['ok' => true, 'message' => $this->koreAnnounce('event_moved', $original->event, $mutation->startMarker, $mutation->allDay, $settings)];
+    }
+
+    /**
+     * Cambia la duración de un evento arrastrando uno de sus bordes.
+     *
+     * @param  int  $edge  Marker del borde nuevo: el fin (exclusivo) o, con `$fromStart`, el inicio.
+     * @return array{ok: bool, message: string}
+     */
+    public function resizeEvent(string|int $id, int $edge, bool $fromStart = false): array
+    {
+        $settings = $this->koreSettingsResolved();
+
+        if (! Bounds::contains($edge)) {
+            return $this->koreReject('resize_rejected', Messages::get('out_of_range'));
+        }
+
+        $instances = $this->koreInstances($settings);
+        $original = self::koreFind($instances, $id);
+
+        if ($original === null) {
+            return $this->koreReject('resize_rejected', Messages::get('event_not_found'), stale: true);
+        }
+
+        $mutation = MutationBuilder::fromSettings($settings)->resize($original, Marker::fromTimestamp($edge), $fromStart);
+
+        if ($mutation === null) {
+            return $this->koreReject('resize_rejected', Messages::get('invalid_duration'));
+        }
+
+        if ($mutation->isNoop()) {
+            return $this->koreUnchanged();
+        }
+
+        $refusal = (new MutationValidator($settings))->validateResize($mutation, $instances)
+            ?? $this->korePersist(fn () => $this->persistResize($original->event, $mutation));
+
+        if ($refusal !== null) {
+            return $this->koreReject('resize_rejected', $refusal);
+        }
+
+        event(new EventResized(static::class, $original->event, $mutation));
+
+        // Un día completo acaba el día ANTES de su fin exclusivo: «termina el 6», no «el 7».
+        $when = match (true) {
+            $fromStart => $mutation->startMarker,
+            $mutation->allDay => $mutation->endMarker->addDays(-1),
+            default => $mutation->endMarker,
+        };
+
+        return ['ok' => true, 'message' => $this->koreAnnounce($fromStart ? 'event_resized_start' : 'event_resized', $original->event, $when, $mutation->allDay, $settings)];
+    }
+
+    /**
+     * Un rango seleccionado arrastrando sobre la rejilla. Si el calendario es
+     * `selectable()`, lo ajusta, lo valida y llama a `onDateSelect()`.
+     *
+     * @param  int  $start  Marker del primer borde.
+     * @param  int  $end  Marker del segundo borde (exclusivo). Si llega antes que `$start`, se ordenan.
+     */
+    public function selectRange(int $start, int $end, bool $allDay, string|int|null $resourceId = null): void
+    {
+        $settings = $this->koreSettingsResolved();
+
+        // Un calendario que no es selectable no explica nada: el cliente no ofrece el gesto.
+        if (! $settings->selectable) {
+            $this->skipRender();
+
+            return;
+        }
+
+        $target = null;
+
+        if ($resourceId !== null) {
+            $target = $this->koreResources()->find($resourceId);
+        }
+
+        $refusal = match (true) {
+            ! Bounds::contains($start, $end) => Messages::get('out_of_range'),
+            $resourceId !== null && $target === null => Messages::get('resource_not_found'),
+            default => null,
+        };
+
+        $selection = null;
+
+        if ($refusal === null) {
+            $selection = MutationBuilder::fromSettings($settings)->select(Marker::fromTimestamp($start), Marker::fromTimestamp($end), $allDay, $target?->id);
+            $refusal = (new MutationValidator($settings))->validateSelection($selection);
+        }
+
+        if ($refusal !== null) {
+            $this->toast()->error($refusal)->send();
+            $this->skipRender();
+
+            return;
+        }
+
+        $this->onDateSelect($selection);
+    }
+
+    // ── Interacción (hooks del consumidor) ──────────────────────────────
+
+    /**
+     * Guarda un evento movido. Se llama solo tras validar, dentro de una transacción.
+     *
+     * Devuelve `null` o `true` para aceptar; `false` para rechazar con el mensaje
+     * genérico; un texto para rechazar con ese motivo (sale en el toast). Si
+     * rechaza o lanza, la transacción se deshace. Sin tipo de retorno a propósito:
+     * así se puede declarar `: void` o no devolver nada, y `null` es «vale».
+     *
+     * Por defecto rechaza, explicando que falta implementarlo: un calendario
+     * `editable()` que no guarda nada no debe parecer que funciona.
+     *
+     * @return bool|string|null
+     */
+    protected function persistMove(CalendarEvent $event, EventMutation $mutation)
+    {
+        return 'Este calendario todavía no guarda los cambios: implementa persistMove() en '.static::class.'.';
+    }
+
+    /**
+     * Guarda un evento redimensionado. Mismo contrato que `persistMove()`.
+     *
+     * @return bool|string|null
+     */
+    protected function persistResize(CalendarEvent $event, EventMutation $mutation)
+    {
+        return 'Este calendario todavía no guarda los cambios: implementa persistResize() en '.static::class.'.';
+    }
+
+    /** Se seleccionó un rango de fechas (ya ajustado y validado). Típicamente abre el formulario de un evento nuevo. */
+    protected function onDateSelect(Selection $selection): void {}
+
+    // ── Interacción (piezas) ────────────────────────────────────────────
+
+    /**
+     * Los eventos de la vista dibujada, normalizados: lo mismo que ve el usuario.
+     * Vuelve a llamar a `events()` en cada acción a propósito (nada de caché entre
+     * peticiones): un evento borrado en otra pestaña tiene que dejar de ser movible.
+     *
+     * @return list<EventInstance>
+     */
+    protected function koreInstances(CalendarSettings $settings): array
+    {
+        $range = ViewRange::for($settings->view, $settings->date, $settings->viewOptions);
+
+        return (new EventCollector(
+            $settings->clock,
+            new EventNormalizer($settings->clock, $settings->defaultTimedSeconds, $settings->defaultAllDayDays),
+        ))->collect(
+            [new CallbackSource(fn (CarbonImmutable $from, CarbonImmutable $to) => $this->events($from, $to))],
+            $range->render,
+        );
+    }
+
+    /** @param  list<EventInstance>  $instances */
+    private static function koreFind(array $instances, string|int $id): ?EventInstance
+    {
+        // Como string: 1 y '1' son el mismo evento (el id viaja por JSON).
+        foreach ($instances as $instance) {
+            if ((string) $instance->event->id === (string) $id) {
+                return $instance;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Ejecuta un hook de persistencia: `null` si aceptó o el motivo del rechazo.
+     *
+     * Dentro de `DB::transaction()` cuando hay base de datos: si el hook rechaza,
+     * lo que hubiera escrito antes se deshace. Sin base de datos (un calendario
+     * que guarda en una API, o los tests de un paquete) se ejecuta tal cual.
+     */
+    protected function korePersist(Closure $hook): ?string
+    {
+        $run = function () use ($hook): void {
+            $result = $hook();
+
+            if ($result === false || (is_string($result) && trim($result) === '')) {
+                throw new MutationRejected(Messages::get('persist_failed'));
+            }
+
+            if (is_string($result)) {
+                throw new MutationRejected($result);
+            }
+        };
+
+        try {
+            $this->koreDatabaseAvailable() ? DB::transaction($run) : $run();
+
+            return null;
+        } catch (MutationRejected $e) {
+            return $e->getMessage();
+        } catch (ValidationException $e) {
+            // Una regla de negocio del consumidor, no un fallo: se muestra su motivo.
+            return $e->validator->errors()->first() ?: Messages::get('persist_failed');
+        } catch (AuthorizationException) {
+            // `$this->authorize('update', $meeting)` dentro del hook.
+            return Messages::get('not_editable');
+        } catch (Throwable $e) {
+            // No se traga: es un fallo del consumidor (o de su base de datos) y tiene
+            // que llegar a su log. Al usuario solo le decimos que no se guardó.
+            report($e);
+
+            return Messages::get('persist_failed');
+        }
+    }
+
+    /** Hay una conexión por defecto configurada y se puede abrir. */
+    private function koreDatabaseAvailable(): bool
+    {
+        $name = config('database.default');
+
+        if (! is_string($name) || $name === '' || ! is_array(config("database.connections.{$name}"))) {
+            return false;
+        }
+
+        try {
+            DB::connection($name)->getPdo();
+
+            return true;
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * Rechazo: un toast con el motivo y la respuesta que hace que el cliente
+     * deshaga su cambio optimista. No se vuelve a pintar (nada cambió), salvo si
+     * el evento ya no existe: la vista está desfasada y el repintado la arregla.
+     *
+     * @return array{ok: false, message: string}
+     */
+    protected function koreReject(string $titleKey, string $reason, bool $stale = false): array
+    {
+        $this->toast()->error(Messages::get($titleKey), $reason)->send();
+
+        if (! $stale) {
+            $this->skipRender();
+        }
+
+        return ['ok' => false, 'message' => $reason];
+    }
+
+    /**
+     * Soltar el evento donde estaba: no es un rechazo ni hay nada que guardar.
+     *
+     * @return array{ok: true, message: string}
+     */
+    private function koreUnchanged(): array
+    {
+        $this->skipRender();
+
+        return ['ok' => true, 'message' => ''];
+    }
+
+    /** El anuncio de aria-live: el título del evento y cuándo queda. Texto plano, no HTML. */
+    private function koreAnnounce(string $key, CalendarEvent $event, Marker $when, bool $allDay, CalendarSettings $settings): string
+    {
+        return Messages::get($key, [
+            'title' => $event->title,
+            'date' => $when->toCarbon()->locale($settings->locale)->isoFormat($allDay ? 'LL' : 'LLL'),
+        ]);
+    }
+
     // ── Configuración fluida (para configure()) ─────────────────────────
 
     /** @param list<string> $views */
@@ -195,6 +565,50 @@ abstract class KoreCalendar extends Component
     protected function eventOrder(string $order, bool $strict = false): static
     {
         return $this->set('event_order', $order)->set('event_order_strict', $strict);
+    }
+
+    // Interacción (config `interaction.*`)
+
+    /** Se pueden mover y redimensionar los eventos (cada uno puede decidir lo suyo: `editable`, `startEditable`, `durationEditable`). */
+    protected function editable(bool $editable = true): static
+    {
+        return $this->set('interaction.editable', $editable);
+    }
+
+    /** Se pueden seleccionar rangos de fechas arrastrando; llega a `onDateSelect()`. */
+    protected function selectable(bool $selectable = true): static
+    {
+        return $this->set('interaction.selectable', $selectable);
+    }
+
+    /** Paso del gesto: `->snap('15m')`. Si no divide `slotDuration`, se usa el slot. */
+    protected function snap(string $duration): static
+    {
+        return $this->set('interaction.snap', $duration);
+    }
+
+    /** `false`: ningún evento se puede solapar con otro (salvo los de su `groupId`). */
+    protected function eventOverlap(bool $allowed = true): static
+    {
+        return $this->set('interaction.event_overlap', $allowed);
+    }
+
+    /** Fechas `YYYY-MM-DD` entre las que se puede editar; el `$end` incluye ese día. `null` deja el extremo abierto. */
+    protected function validRange(?string $start, ?string $end): static
+    {
+        return $this->set('interaction.valid_range', ['start' => $start, 'end' => $end]);
+    }
+
+    /** Al pasar de día completo a con hora (o al revés), conservar la duración en vez de usar la de por defecto. */
+    protected function allDayMaintainDuration(bool $maintain = true): static
+    {
+        return $this->set('interaction.all_day_maintain_duration', $maintain);
+    }
+
+    /** Se puede cambiar un evento de recurso arrastrándolo entre columnas o filas. */
+    protected function resourceEditable(bool $editable = true): static
+    {
+        return $this->set('interaction.resource_editable', $editable);
     }
 
     /** Cualquier clave del config, con puntos: `->set('time.event_min_minutes', 20)`. */

@@ -74,6 +74,25 @@ return [
     'now_indicator' => true,
 
     /*
+    | Interacción (arrastrar, redimensionar, seleccionar). Todo apagado por
+    | defecto: un calendario es de solo lectura hasta que su clase lo diga con
+    | `->editable()`. Lo que manda el navegador se vuelve a validar siempre en el
+    | servidor con estos mismos ajustes (docs/calendar.md §11).
+    */
+    'interaction' => [
+        'editable' => false,                  // se pueden mover y redimensionar los eventos
+        'selectable' => false,                // se pueden seleccionar rangos de fechas
+        'snap' => null,                       // paso del gesto ('15m'). null = time.slot_duration; si no divide el slot, se usa el slot
+        'event_overlap' => true,              // false: ningún evento se puede solapar con otro
+        'all_day_maintain_duration' => false, // al pasar de día completo a con hora (o al revés), conservar la duración
+        'resource_editable' => true,          // se puede cambiar un evento de recurso
+        'valid_range' => [                    // límites de lo editable, 'YYYY-MM-DD' (el fin incluye ese día)
+            'start' => null,
+            'end' => null,
+        ],
+    ],
+
+    /*
     | Formatos de Carbon `isoFormat`, que se adaptan al idioma sin ext-intl:
     | LL = «16 de octubre de 2026» / «October 16, 2026», LT = hora del locale.
     */
@@ -113,7 +132,27 @@ return [
         'view_timeline-week' => 'Timeline · semana',
         'view_timeline-month' => 'Timeline · mes',
         'resources' => 'Recursos',
+        'kbd_help' => 'Espacio para mover con el teclado: flechas para cambiar de día u hora, Mayúsculas y flechas para cambiar la duración, Intro para soltar y Escape para cancelar.',
+        'kbd_grabbed' => 'Agarrado.',
+        'kbd_cancelled' => 'Cancelado.',
         'toggle_group' => 'Mostrar u ocultar :group',
+
+        // Interacción: los motivos de rechazo salen en un toast; los éxitos solo se
+        // anuncian por aria-live, nunca en un toast.
+        'move_rejected' => 'No se pudo mover el evento',
+        'resize_rejected' => 'No se pudo cambiar la duración del evento',
+        'not_editable' => 'Este evento no se puede editar',
+        'resource_locked' => 'Este evento no se puede cambiar de recurso',
+        'overlap_rejected' => 'Se solapa con «:title»',
+        'out_of_range' => 'Fuera del rango permitido',
+        'event_not_found' => 'El evento ya no está disponible',
+        'resource_not_found' => 'El recurso de destino no existe',
+        'invalid_duration' => 'La duración no puede ser cero ni negativa',
+        'invalid_change' => 'El cambio no es válido',
+        'persist_failed' => 'No se pudo guardar el cambio',
+        'event_moved' => '«:title» movido al :date',
+        'event_resized' => '«:title» ahora termina :date',
+        'event_resized_start' => '«:title» ahora empieza :date',
     ],
 
 ];
