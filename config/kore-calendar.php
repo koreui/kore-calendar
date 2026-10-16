@@ -15,6 +15,9 @@ return [
     /* Vista inicial: month | week | day | list | resource-week | resource-day */
     'default_view' => 'month',
 
+    /* Vistas del selector. Las de recursos solo se ofrecen si el calendario tiene recursos. */
+    'views' => ['month', 'week', 'day', 'list', 'resource-week', 'resource-day'],
+
     /* Zona horaria de la vista. null = config('app.timezone'). */
     'timezone' => null,
 
@@ -85,6 +88,16 @@ return [
         'no_events' => 'No hay eventos en este periodo',
         'close' => 'Cerrar',
         'events_of' => 'Eventos del :date',
+        'previous' => 'Anterior',
+        'next' => 'Siguiente',
+        'today' => 'Hoy',
+        'views' => 'Vista',
+        'view_month' => 'Mes',
+        'view_week' => 'Semana',
+        'view_day' => 'Día',
+        'view_list' => 'Agenda',
+        'view_resource-week' => 'Recursos · semana',
+        'view_resource-day' => 'Recursos · día',
     ],
 
 ];

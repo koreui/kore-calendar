@@ -89,9 +89,9 @@ it('ninguna prop declarada se queda sin leer', function () {
 it('ninguna clave de traducción se queda sin usar', function () {
     // Las que se piden con el nombre construido al vuelo. El grep no las ve, y
     // el prefijo o el sufijo están en el código de al lado. Si una vista monta
-    // una clave así (`'presence_'.$presence`), se apunta aquí su prefijo. El
-    // calendario todavía no tiene ninguna.
-    $dinamicas = [];
+    // una clave así (`'presence_'.$presence`), se apunta aquí su prefijo.
+    // `view_`: el toolbar pide `'view_'.$view`.
+    $dinamicas = ['view_'];
 
     $config = file_get_contents(__DIR__.'/../../config/kore-calendar.php');
 
