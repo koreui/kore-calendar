@@ -7,7 +7,7 @@ y el proyecto usa [Semantic Versioning](https://semver.org/lang/es/).
 
 ---
 
-## [Unreleased]
+## [0.1.0] — 2026-10-16
 
 ### Added
 
@@ -113,3 +113,5 @@ y el proyecto usa [Semantic Versioning](https://semver.org/lang/es/).
 - **Sin `validRange`, el servidor solo acepta fechas a ±200 años de hoy** (antes, años 1–9999).
 - **El rechazo por solapar un evento de fondo o `none` ya no revela su título**: dice «Se solapa con otro evento».
 - **El selector de color del formulario no usa el color propio de un evento como etiqueta**, y no lo ofrece si no es un color CSS válido.
+
+[0.1.0]: https://github.com/koreui/kore-calendar/releases/tag/v0.1.0
