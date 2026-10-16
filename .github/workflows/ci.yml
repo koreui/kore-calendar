@@ -5,29 +5,34 @@ on:
     branches: [main]
   pull_request:
 
-# kore-ui/calendar depende de kore-ui/kore-ui por un path repository (../kore-ui),
-# así que cada job clona kore-ui al lado antes de instalar. Si el repositorio de
-# kore-ui es privado, hace falta el secreto KORE_UI_TOKEN con permiso de lectura.
-env:
-  KORE_UI_REPO: koreui/kore-ui
-
+# En el monorepo, kore-ui llega por un path repository (../kore-ui). El CI lo
+# quita y lo instala desde Packagist: prueba exactamente lo que recibe quien hace
+# `composer require kore-ui/calendar`. Por eso el CI falla mientras la versión de
+# kore-ui que exige composer.json no esté publicada (ver CHANGELOG).
 jobs:
   php-tests:
-    name: PHP ${{ matrix.php }} / Laravel ${{ matrix.laravel }}
+    name: PHP ${{ matrix.php }} / Laravel ${{ matrix.laravel }} / ${{ matrix.stability }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         php: ['8.2', '8.3', '8.4']
         laravel: ['12', '13']
+        stability: ['prefer-stable']
         exclude:
           - php: '8.2'
             laravel: '13'
+        include:
+          # Las versiones mínimas que promete composer.json (kore-ui, Carbon,
+          # php-rrule...): un `^` demasiado bajo solo se ve aquí.
+          - php: '8.2'
+            laravel: '12'
+            stability: 'prefer-lowest'
     steps:
       - uses: actions/checkout@v5
 
-      - name: Clone kore-ui next to the package
-        run: git clone --depth 1 "https://x-access-token:${{ secrets.KORE_UI_TOKEN || github.token }}@github.com/${KORE_UI_REPO}.git" ../kore-ui
+      - name: Use kore-ui from Packagist, not the monorepo path
+        run: composer config --unset repositories
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -38,7 +43,7 @@ jobs:
           ini-values: memory_limit=-1
 
       - name: Install Composer dependencies (Laravel ${{ matrix.laravel }})
-        run: composer update --prefer-dist --no-interaction --no-progress --with "illuminate/support:^${{ matrix.laravel }}.0"
+        run: composer update --${{ matrix.stability }} --prefer-dist --no-interaction --no-progress --with "illuminate/support:^${{ matrix.laravel }}.0"
 
       - name: Run Pest
         run: ./vendor/bin/pest
