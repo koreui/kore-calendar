@@ -25,8 +25,12 @@ final class CalendarRenderer
 {
     /**
      * @param  iterable<EventSource>|iterable<mixed>  $events  Fuentes, o una lista de eventos (CalendarEvent o arrays).
+     * @param  bool  $virtualize  Montar solo una ventana de filas del timeline cuando hay más de `timeline.virtualize_after`.
+     *                            Solo tiene sentido con un servidor al que pedir la ventana siguiente (KoreCalendar); sin él
+     *                            (`<x-kore::calendar>` por enlaces) las filas de fuera no se podrían cargar nunca.
+     * @param  string|null  $id  El id del componente de Livewire que lo pinta, para los ids que tienen que ser únicos por calendario.
      */
-    public static function render(CalendarSettings $settings, iterable $events = [], ?ResourceSet $resources = null): RenderedCalendar
+    public static function render(CalendarSettings $settings, iterable $events = [], ?ResourceSet $resources = null, bool $virtualize = true, ?string $id = null): RenderedCalendar
     {
         $range = ViewRange::for($settings->view, $settings->date, $settings->viewOptions);
         $now = $settings->clock->now();
@@ -42,7 +46,7 @@ final class CalendarRenderer
         $layout = match ($settings->view) {
             'month' => MonthLayout::build($range, $instances, $now, $options, $settings->weekNumbers, $settings->businessHours),
             'list' => ListLayout::build($range, $instances, $now, $options),
-            'timeline-day', 'timeline-week', 'timeline-month' => self::timeline($settings, $range, $instances, $now, $resources),
+            'timeline-day', 'timeline-week', 'timeline-month' => self::timeline($settings, $range, $instances, $now, $resources, $virtualize),
             'resource-week', 'resource-day' => TimeGridLayout::build($range, $instances, $now, $options, $resources ?? new ResourceSet([]), $settings->datesAboveResources, $settings->slotDuration, $settings->businessHours),
             default => TimeGridLayout::build($range, $instances, $now, $options, null, false, $settings->slotDuration, $settings->businessHours),
         };
@@ -51,13 +55,14 @@ final class CalendarRenderer
         // en la vista: en un "+N más" o en otra columna también están, y el aviso va por evento.
         $conflicts = $settings->highlightConflicts ? ConflictFinder::byInstance(ConflictFinder::find($instances)) : [];
 
-        return new RenderedCalendar($settings, $range, $layout, $now, $resources, $conflicts);
+        return new RenderedCalendar($settings, $range, $layout, $now, $resources, $conflicts, $id);
     }
 
-    private static function timeline(CalendarSettings $settings, ViewRange $range, array $instances, $now, ?ResourceSet $resources): TimelineLayout
+    private static function timeline(CalendarSettings $settings, ViewRange $range, array $instances, $now, ?ResourceSet $resources, bool $virtualize): TimelineLayout
     {
-        // Solo con muchas filas se monta una ventana: por debajo, todo de una vez.
-        $virtual = count(TimelineLayout::rowSkeleton($resources)) > CalendarSettings::virtualizeAfter();
+        // Solo con muchas filas se monta una ventana: por debajo, todo de una vez. Y solo
+        // si hay quien la sirva: sin servidor se pintan todas, aunque sean muchas.
+        $virtual = $virtualize && count(TimelineLayout::rowSkeleton($resources)) > CalendarSettings::virtualizeAfter();
 
         return TimelineLayout::build(
             $range, $instances, $now, $settings->layoutOptions, $resources, $settings->timelineSlot,

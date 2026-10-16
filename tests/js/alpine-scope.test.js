@@ -28,8 +28,8 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
  *   - No hay ningún error. Simplemente, un componente lee los datos de otro.
  *
  * Un test unitario NO puede ver esto: si le pasas un objeto plano como `this`, la asignación
- * funciona (`drag.test.js` es así). Sólo se ve con Alpine de verdad (el último bloque de este
- * archivo) o mirando el código (el primero).
+ * funciona (los tests de `click.test.js` y `keyboard.test.js` son así). Sólo se ve con Alpine de
+ * verdad (el último bloque de este archivo) o mirando el código (el primero).
  *
  * La regla, entonces: **toda propiedad que un componente se asigne a sí mismo tiene que estar
  * declarada en el objeto que devuelve la factoría**, aunque sea con `null`. Incluidas las
@@ -39,8 +39,9 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 // `new URL(...)` sería el de jsdom, que fileURLToPath no acepta: se resuelve con la ruta del archivo.
 const JS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../resources/js');
 
-// Todo `resources/js` salvo lo que no es un componente: el entry y la matemática pura.
-const NO_COMPONENTES = ['index.js', 'geometry.js'];
+// Todo `resources/js` salvo lo que no es un componente: el entry. (mutation.js y click.js son
+// matemática pura, pero pasan igual: no se asignan nada con `this`.)
+const NO_COMPONENTES = ['index.js'];
 
 const FILES = readdirSync(JS_DIR, { recursive: true })
     .filter((f) => f.endsWith('.js') && !NO_COMPONENTES.includes(basename(f)))
@@ -111,9 +112,11 @@ const leakedKeys = (source) => {
 
 describe('ningún componente escribe fuera de su propio scope', () => {
     it('encuentra los componentes (si no, el resto no mira nada)', () => {
-        expect(FILES).toContain('resources/js/interaction/drag.js');
+        expect(FILES).toContain('resources/js/interaction/calendar.js');
+        expect(FILES).toContain('resources/js/timeline.js');
         expect(FILES).not.toContain('resources/js/index.js');
-        expect(FILES).not.toContain('resources/js/interaction/geometry.js');
+        // La prueba técnica de la fase 1 se retiró: que no vuelva a colarse en el bundle.
+        expect(FILES.filter((f) => /drag|geometry/.test(f))).toEqual([]);
     });
 
     it.each(FILES)('%s declara todo lo que se asigna', (file) => {
@@ -136,39 +139,42 @@ describe('ningún componente escribe fuera de su propio scope', () => {
 /**
  * El componente, montado con Alpine DE VERDAD.
  *
- * `drag.test.js` le pasa un objeto plano como `this` y por eso es incapaz de ver la fuga.
- * Aquí se monta lo que la provoca: dos calendarios anidados dentro de otro x-data (en una
- * app de verdad —un layout con `x-data="{ sidebarOpen: false }"`— nunca son el más externo),
- * y se hace un gesto completo en cada uno llamando a los métodos por el Proxy de Alpine.
+ * Los tests con un objeto plano como `this` son incapaces de ver la fuga. Aquí se monta lo que
+ * la provoca: dos calendarios anidados dentro de otro x-data (en una app de verdad —un layout con
+ * `x-data="{ sidebarOpen: false }"`— nunca son el más externo), y se hace un gesto completo con el
+ * teclado en cada uno llamando a los métodos por el Proxy de Alpine. Con el teclado y no con el
+ * puntero porque jsdom no maqueta (`elementsFromPoint` no encuentra destinos); el estado que se
+ * asigna (`keyboard`, `pending`, `announcement`, `gesture`…) es el mismo.
  */
-describe('KoreCalendarDrag montado con Alpine', () => {
-    const RECT = { left: 0, top: 0, width: 400, height: 600 };
-    const rejilla = (id) => document.querySelector(`#${id} [x-ref="grid"]`);
+describe('KoreCalendarInteraction montado con Alpine', () => {
     let Alpine;
     let moveEvent;
 
     const calendario = (id) => `
-        <div id="${id}" x-data="KoreCalendarDrag({ columns: 4, axisMinutes: 600, snapMinutes: 15 })">
-            <div x-ref="grid">
-                <div class="sombra" x-bind:style="shadowStyle" style="display: none"></div>
-            </div>
+        <div id="${id}" x-data="KoreCalendarInteraction({ snap: 900, texts: { grabbed: 'Agarrado.' } })">
+            <div id="${id}-ev" data-kore-event="${id}-ev" data-movable data-title="Reunión ${id}"
+                 data-start="3600" data-end="7200" data-all-day="0" tabindex="0"></div>
+            <div data-kore-calendar-overlay></div>
+            <p class="anuncio" x-text="announcement"></p>
         </div>`;
 
     const dataOf = (id) => Alpine.$data(document.getElementById(id));
-    const pointer = (clientX, clientY) => ({ clientX, clientY, button: 0, preventDefault() {} });
+    const tecla = (id, key) => ({ key, target: document.getElementById(`${id}-ev`), shiftKey: false, preventDefault() {} });
 
     // Alpine se arranca UNA vez por archivo: vive en node_modules, así que `vi.resetModules()`
     // no lo reinicia, y un segundo `Alpine.start()` avisa y duplica el observador de mutaciones.
     // Después de arrancar, Alpine inicializa solo cada nodo nuevo que entra en el documento.
     beforeAll(async () => {
         delete window.Alpine;
+        // Tras soltar, el componente devuelve el foco al evento con CSS.escape, que jsdom no trae.
+        globalThis.CSS ??= { escape: (valor) => String(valor) };
 
         Alpine = (await import('alpinejs')).default;
-        const KoreCalendarDrag = (await import('../../resources/js/interaction/drag.js')).default;
+        const KoreCalendarInteraction = (await import('../../resources/js/interaction/calendar.js')).default;
 
-        Alpine.data('KoreCalendarDrag', KoreCalendarDrag);
+        Alpine.data('KoreCalendarInteraction', KoreCalendarInteraction);
         // Livewire registra `$wire` como magic; aquí, uno de mentira que lee el `moveEvent` del test.
-        Alpine.magic('wire', () => ({ moveEvent }));
+        Alpine.magic('wire', () => ({ moveEvent: (...args) => moveEvent(...args) }));
 
         Alpine.start();
     });
@@ -183,33 +189,32 @@ describe('KoreCalendarDrag montado con Alpine', () => {
                 ${calendario('cal-2')}
             </div>`;
 
-        // jsdom no maqueta: la rejilla mide 0 x 0 salvo que se le diga otra cosa.
-        rejilla('cal-1').getBoundingClientRect = () => RECT;
-        rejilla('cal-2').getBoundingClientRect = () => RECT;
-
         await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
-    it('cada calendario guarda SU gesto, no el del último que empezó', () => {
-        dataOf('cal-1').startDrag(pointer(150, 100), 'a', 1, 60, 60);
-        dataOf('cal-2').startDrag(pointer(250, 200), 'b', 2, 120, 30);
+    it('cada calendario guarda SU evento agarrado, no el del último que empezó', () => {
+        dataOf('cal-1').onKeydown(tecla('cal-1', ' '));
+        dataOf('cal-2').onKeydown(tecla('cal-2', ' '));
+        dataOf('cal-1').onKeydown(tecla('cal-1', 'ArrowRight'));
 
-        expect(dataOf('cal-1').drag.id).toBe('a');
-        expect(dataOf('cal-2').drag.id).toBe('b');
-        expect(dataOf('cal-1')._origin.x).toBe(150);
-        expect(dataOf('cal-2')._origin.x).toBe(250);
+        expect(dataOf('cal-1').keyboard.event.id).toBe('cal-1-ev');
+        expect(dataOf('cal-2').keyboard.event.id).toBe('cal-2-ev');
+        // El movimiento de uno no se ve en el otro.
+        expect(dataOf('cal-1').keyboard.start).toBe(3600 + 86400);
+        expect(dataOf('cal-2').keyboard.start).toBe(3600);
     });
 
     it('un gesto completo no escribe nada en el x-data del layout', async () => {
         const cal = dataOf('cal-1');
 
-        cal.startDrag(pointer(150, 100), 'a', 1, 60, 60);
-        cal.moveDrag(pointer(250, 130));
-        await cal.endDrag();
-        cal.startDrag(pointer(150, 100), 'a', 1, 60, 60);
-        cal.cancelDrag();
+        cal.onKeydown(tecla('cal-1', ' '));
+        cal.onKeydown(tecla('cal-1', 'ArrowDown'));
+        cal.onKeydown(tecla('cal-1', 'Enter'));
+        await vi.waitFor(() => expect(cal.pending).toBe(false));
+        cal.onKeydown(tecla('cal-1', ' '));
+        cal.onKeydown(tecla('cal-1', 'Escape'));
 
-        // Si `drag`, `pending`, `announcement` o `_origin` aparecen aquí, la fuga ha vuelto.
+        // Si `keyboard`, `pending`, `announcement` o `gesture` aparecen aquí, la fuga ha vuelto.
         // Se lee el objeto de datos crudo, no el $data: el Proxy que fusiona los scopes no
         // expone descriptores, así que Object.keys() sobre él siempre devuelve [].
         const layout = document.getElementById('layout')._x_dataStack[0];
@@ -218,42 +223,36 @@ describe('KoreCalendarDrag montado con Alpine', () => {
     });
 
     it('soltar en un calendario no toca al otro', async () => {
-        dataOf('cal-2').startDrag(pointer(250, 200), 'b', 2, 120, 30);
+        dataOf('cal-2').onKeydown(tecla('cal-2', ' '));
 
         const cal = dataOf('cal-1');
-        cal.startDrag(pointer(150, 100), 'a', 1, 60, 60);
-        cal.moveDrag(pointer(250, 130));
-        await cal.endDrag();
+        cal.onKeydown(tecla('cal-1', ' '));
+        cal.onKeydown(tecla('cal-1', 'ArrowRight'));
+        cal.onKeydown(tecla('cal-1', 'Enter'));
+        await vi.waitFor(() => expect(cal.pending).toBe(false));
 
         expect(moveEvent).toHaveBeenCalledTimes(1);
-        expect(moveEvent).toHaveBeenCalledWith('a', 2, 90);
-        expect(dataOf('cal-1').drag).toBeNull();
+        expect(moveEvent).toHaveBeenCalledWith('cal-1-ev', 3600 + 86400, false, null, null);
+        expect(dataOf('cal-1').keyboard).toBeNull();
         expect(dataOf('cal-1').announcement).toBe('Evento movido');
-        // El otro sigue agarrado, sin anuncio y sin esperar.
-        expect(dataOf('cal-2').drag.id).toBe('b');
-        expect(dataOf('cal-2').announcement).toBe('');
+        // El otro sigue agarrado, con su propio anuncio (el de agarrar) y sin esperar.
+        expect(dataOf('cal-2').keyboard.event.id).toBe('cal-2-ev');
+        expect(dataOf('cal-2').announcement).not.toContain('Evento movido');
         expect(dataOf('cal-2').pending).toBe(false);
     });
 
-    it('la sombra sigue al gesto a través de la reactividad de Alpine', async () => {
-        const sombra = (id) => document.querySelector(`#${id} .sombra`);
+    it('el anuncio llega al DOM a través de la reactividad de Alpine, solo al calendario que lo dijo', async () => {
+        const anuncio = (id) => document.querySelector(`#${id} .anuncio`).textContent;
 
-        expect(sombra('cal-1').style.display).toBe('none');
+        expect(anuncio('cal-1')).toBe('');
 
-        const cal = dataOf('cal-1');
-        cal.startDrag(pointer(150, 100), 'a', 1, 60, 60);
-        cal.moveDrag(pointer(250, 130)); // columna 2, 60 + 30 = 90 minutos
+        dataOf('cal-1').onKeydown(tecla('cal-1', ' '));
+        await Alpine.nextTick();
         await Alpine.nextTick();
 
-        expect(sombra('cal-1').style.display).toBe('');
-        expect(sombra('cal-1').style.left).toBe('50%');
-        expect(sombra('cal-1').style.top).toBe('15%');
+        expect(anuncio('cal-1')).toContain('Reunión cal-1');
+        expect(anuncio('cal-1')).toContain('Agarrado.');
         // El otro calendario no se entera.
-        expect(sombra('cal-2').style.display).toBe('none');
-
-        cal.cancelDrag();
-        await Alpine.nextTick();
-
-        expect(sombra('cal-1').style.display).toBe('none');
+        expect(anuncio('cal-2')).toBe('');
     });
 });

@@ -52,7 +52,10 @@
 
         $calendar = \KoreUi\Calendar\View\CalendarRenderer::render(
             \KoreUi\Calendar\View\CalendarSettings::make([
-                'view' => in_array($requestedView, $available, true) ? $requestedView : ($view ?? $available[0] ?? null),
+                // La URL manda (así funcionan los enlaces de la barra); después la prop y
+                // `default_view`, y por último la primera del selector. Como en KoreCalendar,
+                // una vista que el selector no ofrece no cuenta.
+                'view' => \KoreUi\Calendar\View\CalendarViews::initial([$requestedView, $view, config('kore-calendar.default_view')], $available),
                 'date' => is_string($requestedDate) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $requestedDate) ? $requestedDate : $date,
                 'timezone' => $timezone,
                 'locale' => $locale,
@@ -69,6 +72,9 @@
             ]),
             $events,
             $resourceSet,
+            // Sin Livewire no hay quien dé la ventana siguiente al hacer scroll: el
+            // timeline pinta todas las filas en vez de dejar el resto inalcanzable.
+            virtualize: false,
         );
     }
 

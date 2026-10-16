@@ -70,6 +70,9 @@
                             'relative flex min-w-0 flex-col gap-0.5 border-kore-border pb-1',
                             'border-l' => $c > 0 || $weekNumbers,
                             'kore-calendar-day-today' => $cell['isToday'],
+                            // Relleno de un mes vecino (--kore-calendar-other-month). Hoy conserva su resalte y
+                            // un día deshabilitado, el suyo: la clase no está en una capa de Tailwind y los pisaría.
+                            'kore-calendar-day-other' => $cell['isOther'] && ! $cell['isToday'] && ! $cell['isDisabled'],
                             'bg-kore-muted/40' => $cell['isDisabled'],
                         ])
                     >
@@ -88,7 +91,7 @@
                                 @class([
                                     'grid size-6 place-items-center rounded-full tabular-nums',
                                     'bg-kore-primary font-semibold text-kore-primary-fg' => $cell['isToday'],
-                                    'text-kore-muted-fg' => ! $cell['isToday'] && $cell['isOther'],
+                                    'kore-calendar-other-number' => ! $cell['isToday'] && $cell['isOther'],
                                 ])
                             >{{ $calendar->format($cell['date'], 'day_number') }}</span>
                         </div>

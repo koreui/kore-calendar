@@ -62,7 +62,7 @@ it('con eventForm() los eventos son enfocables aunque el calendario no sea edita
         ->and($html)->not->toContain('data-movable')
         ->and($html)->not->toContain('data-resizable')
         // Ni la ayuda de «Espacio para mover», que no aplica a un evento que no se mueve.
-        ->and($html)->not->toContain('aria-describedby="kore-calendar-kbd-help"');
+        ->and($html)->not->toContain('aria-describedby="kore-calendar-kbd-help');
 });
 
 it('un evento movible y pulsable lleva los dos atributos y una sola parada de tabulación', function () {

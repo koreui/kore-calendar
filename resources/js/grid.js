@@ -52,6 +52,11 @@ export function targetIndex(key, index, total, columns, rtl = false) {
     return next;
 }
 
-function isRtl(el) {
+/**
+ * ¿Se lee de derecha a izquierda? Por el `dir` más cercano, igual que lo resuelve el
+ * navegador. También lo usa el teclado de `interaction/calendar.js`: mover un evento y
+ * navegar por la rejilla tienen que invertir las flechas a la vez.
+ */
+export function isRtl(el) {
     return el.closest?.('[dir]')?.getAttribute('dir') === 'rtl';
 }

@@ -36,3 +36,28 @@ it('con recursos ofrece sus vistas; sin ellos, no', function () {
 
     expect($con)->toContain('view=resource-week')->and($sin)->not->toContain('view=resource-week');
 });
+
+it('el timeline sin Livewire pinta todas las filas aunque pasen de virtualize_after', function () {
+    // En modo enlaces no hay servidor que dé la ventana siguiente al hacer scroll
+    // (live=false): virtualizar dejaba las filas 61 a 150 fuera para siempre.
+    $recursos = array_map(fn ($i) => ['id' => "r{$i}", 'title' => sprintf('Recurso %03d', $i)], range(1, 150));
+
+    $html = (string) $this->blade('<x-kore::calendar view="timeline-day" date="2026-10-14" timezone="UTC" :resources="$recursos" />', ['recursos' => $recursos]);
+
+    expect(config('kore-calendar.timeline.virtualize_after'))->toBe(100)
+        ->and(substr_count($html, 'kore-calendar-timeline-lane'))->toBe(150)
+        ->and($html)->toContain('Recurso 001')->toContain('Recurso 150')
+        ->and($html)->toContain('data-total="150"')->toContain('data-row-count="150"')
+        ->and($html)->not->toContain('data-kore-timeline-spacer')
+        ->and($html)->toContain('live: false');
+});
+
+it('KoreCalendar sí virtualiza: tiene servidor al que pedir la ventana siguiente', function () {
+    // El contrapunto del anterior: el timeline con Livewire sigue montando una ventana.
+    \Livewire\Livewire::withQueryParams(['view' => 'timeline-day', 'date' => '2026-10-14'])
+        ->test(\KoreUi\Calendar\Tests\Feature\Fixtures\ManyResourcesCalendar::class)
+        ->assertSeeHtml('data-total="150"')
+        ->assertSeeHtml('data-row-count="60"')
+        ->assertSeeHtml('data-kore-timeline-spacer')
+        ->assertSeeHtml('live: true');
+});

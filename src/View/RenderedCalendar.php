@@ -10,6 +10,7 @@ use KoreUi\Calendar\Layout\TimelineLayout;
 use KoreUi\Calendar\Resources\ResourceSet;
 use KoreUi\Calendar\Time\Marker;
 use KoreUi\Calendar\Time\ViewRange;
+use KoreUi\Core\Support\IdContext;
 
 /**
  * Lo que reciben las vistas Blade. Incluye los formateadores, para que ninguna
@@ -17,6 +18,8 @@ use KoreUi\Calendar\Time\ViewRange;
  */
 final class RenderedCalendar
 {
+    private ?string $keyboardHelpId = null;
+
     public function __construct(
         public readonly CalendarSettings $settings,
         public readonly ViewRange $range,
@@ -25,7 +28,28 @@ final class RenderedCalendar
         public readonly ?ResourceSet $resources,
         /** @var array<string, list<EventInstance>> `instanceId` → los eventos con los que choca (vacío sin `highlightConflicts()`). */
         public readonly array $conflicts = [],
+        /** El id del componente de Livewire que lo pinta (`KoreCalendar`). `null` en el calendario sin estado. */
+        public readonly ?string $id = null,
     ) {}
+
+    /**
+     * El id del texto de ayuda del teclado, único por calendario.
+     *
+     * Los eventos movibles lo citan con `aria-describedby` y la vista de Livewire lo
+     * pinta. Con un id fijo, dos calendarios en la página lo repetían y el segundo
+     * apuntaba al texto del primero. Con Livewire lleva el id del componente: distinto
+     * por calendario y el mismo en cada render del mismo (un contador no valdría: el
+     * morph vería un id nuevo en cada petición). Sin él (el texto solo existe en la vista
+     * de Livewire, pero las vistas se pueden pintar sueltas) se pide a `IdContext` de
+     * kore-ui, el generador de ids de la librería. Se calcula una vez por render para que
+     * el texto y los eventos coincidan.
+     */
+    public function keyboardHelpId(): string
+    {
+        return $this->keyboardHelpId ??= $this->id !== null
+            ? 'kore-calendar-kbd-help-'.$this->id
+            : IdContext::secuencia('kore-calendar-kbd-help');
+    }
 
     /**
      * Los eventos con los que choca este (para marcarlo y decir con quién).

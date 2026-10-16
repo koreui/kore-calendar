@@ -14,13 +14,11 @@
  * todo (`readyState === 'complete'`) Alpine ha arrancado seguro: Livewire lo
  * arranca en DOMContentLoaded, que ocurre antes.
  */
-import KoreCalendarDrag from './interaction/drag.js';
 import KoreCalendarInteraction from './interaction/calendar.js';
 import KoreCalendarGrid from './grid.js';
 import KoreCalendarTimeline from './timeline.js';
 
 const COMPONENTES = {
-    KoreCalendarDrag,
     KoreCalendarGrid,
     KoreCalendarTimeline,
     KoreCalendarInteraction,

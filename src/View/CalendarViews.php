@@ -28,6 +28,30 @@ final class CalendarViews
         ));
     }
 
+    /**
+     * La vista con la que arranca un calendario: el primer candidato que el calendario
+     * ofrece y, si ninguno vale, la primera de las disponibles (o `month` si no hay ninguna).
+     *
+     * Es la cadena de <x-kore::calendar> (URL, prop `view`, `default_view`) y de
+     * `KoreCalendar` (`$view`, `default_view`) en un solo sitio, para que no vuelvan a
+     * discrepar: cada eslabón solo cuenta si la vista está disponible, así que un valor
+     * inventado, una vista de recursos sin recursos o una `default_view` que no está en
+     * `views` caen al siguiente en vez de pintar una vista que el selector no ofrece.
+     *
+     * @param  iterable<mixed>  $candidates  De mayor a menor prioridad; los que no son texto se saltan.
+     * @param  list<string>  $available  Lo que devuelve `available()`.
+     */
+    public static function initial(iterable $candidates, array $available): string
+    {
+        foreach ($candidates as $candidate) {
+            if (is_string($candidate) && in_array($candidate, $available, true)) {
+                return $candidate;
+            }
+        }
+
+        return $available[0] ?? 'month';
+    }
+
     /** El componente Blade (bajo kore::calendar.) que pinta la vista. */
     public static function component(string $view): string
     {

@@ -5,7 +5,7 @@ import { clickedEventId, keyedEventId } from '../../resources/js/interaction/cli
 
 /**
  * Pulsar un evento: qué lo abre (`click.js`, puro) y cómo se cablea al servidor
- * (`KoreCalendarInteraction`, con `$wire` de mentira, como en drag.test.js).
+ * (`KoreCalendarInteraction`, con `$wire` de mentira).
  *
  * Lo que decide el HTML del servidor, no el JS:
  *   data-kore-event   el id

@@ -5,7 +5,8 @@
     - [data-kore-calendar-overlay] con wire:ignore: la previsualización del gesto.
       El morph no la toca, así que un re-render a mitad del gesto no la borra.
     - una región aria-live para los anuncios (movido, cancelado…).
-    - el texto de ayuda del teclado al que apuntan los eventos movibles.
+    - el texto de ayuda del teclado al que apuntan los eventos movibles (con un id
+      propio de cada calendario: RenderedCalendar::keyboardHelpId()).
 
     Atajos dentro del calendario (si no hay un evento agarrado con el teclado):
     RePág / AvPág periodo anterior y siguiente, T hoy.
@@ -27,6 +28,8 @@
             'grabbed' => $koreCalendar->text('kbd_grabbed'),
             'moving' => '',
             'cancelled' => $koreCalendar->text('kbd_cancelled'),
+            // Plantilla de «ahora termina»: al redimensionar con el teclado se anuncia el nuevo fin, como al soltar.
+            'resized' => $koreCalendar->text('event_resized', ['title' => ':title', 'date' => ':date']),
         ],
     ]) }})"
     class="relative"
@@ -44,5 +47,5 @@
 
     <div wire:ignore data-kore-calendar-overlay class="pointer-events-none absolute inset-0 z-40" aria-hidden="true"></div>
     <div class="sr-only" aria-live="assertive" aria-atomic="true" x-text="announcement"></div>
-    <p id="kore-calendar-kbd-help" class="sr-only">{{ $koreCalendar->text('kbd_help') }}</p>
+    <p id="{{ $koreCalendar->keyboardHelpId() }}" class="sr-only">{{ $koreCalendar->text('kbd_help') }}</p>
 </div>

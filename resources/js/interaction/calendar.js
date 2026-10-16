@@ -1,11 +1,11 @@
+import { isRtl } from '../grid.js';
 import { clickedEventId, keyedEventId } from './click.js';
 import { DAY, computeMove, computeResize, computeSelection, hitFrom } from './mutation.js';
 
 /**
  * Arrastrar, redimensionar, seleccionar y mover con el teclado, en todas las vistas.
  *
- * Lo validó la prueba técnica de la fase 1 y se mantiene: el servidor calcula
- * dónde va todo y el navegador solo previsualiza. Mientras dura el gesto no hay
+ * El servidor calcula dónde va todo y el navegador solo previsualiza. Mientras dura el gesto no hay
  * red; al soltar, UN viaje a Livewire (moveEvent, resizeEvent, selectRange), que
  * vuelve a ajustar, valida y persiste. Si lo rechaza, la previsualización
  * desaparece y el evento sigue donde estaba: el servidor nunca lo movió.
@@ -156,6 +156,10 @@ export default function KoreCalendarInteraction(config = {}) {
          * slot en las vistas con hora o una semana en el mes); Mayúsculas + flechas
          * cambian el fin; Intro confirma y Escape cancela. FullCalendar no tiene nada
          * de esto: sin ratón no se puede mover un evento.
+         *
+         * ←/→ van en el sentido VISUAL, como las flechas de la rejilla (grid.js): en RTL
+         * el día siguiente está a la izquierda. Con Mayúsculas la tecla también es visual
+         * (en RTL el fin del evento está a la izquierda, así que ← lo alarga).
          */
         onKeydown(e) {
             const eventEl = e.target.closest?.('[data-kore-event][data-movable]');
@@ -183,18 +187,22 @@ export default function KoreCalendarInteraction(config = {}) {
             const k = this.keyboard;
             const stepTime = k.allDay || this.isMonth() ? DAY : this.snap;
             const vertical = this.isMonth() ? 7 * DAY : stepTime;
-            const delta = { ArrowLeft: -DAY, ArrowRight: DAY, ArrowUp: -vertical, ArrowDown: vertical }[e.key];
+            const side = isRtl(this.$root) ? -1 : 1;
+            const delta = { ArrowLeft: -DAY * side, ArrowRight: DAY * side, ArrowUp: -vertical, ArrowDown: vertical }[e.key];
 
             if (delta !== undefined) {
                 e.preventDefault();
-                if (e.shiftKey && eventEl?.hasAttribute('data-resizable')) {
+                const resizing = e.shiftKey && Boolean(eventEl?.hasAttribute('data-resizable'));
+
+                if (resizing) {
                     k.end = Math.max(k.start + stepTime, k.end + (Math.abs(delta) === DAY ? delta : Math.sign(delta) * stepTime));
                 } else {
                     k.start += delta;
                     k.end += delta;
                 }
                 this.draw(k);
-                this.say(this.describe(k, 'moving'));
+                // Al redimensionar lo que cambia es el fin: anunciar el inicio, que no se mueve, no dice nada.
+                this.say(this.describe(k, 'moving', resizing ? 'end' : 'start'));
 
                 return;
             }
@@ -338,13 +346,27 @@ export default function KoreCalendarInteraction(config = {}) {
             this.$nextTick(() => { this.announcement = text; });
         },
 
-        describe(k, state) {
+        /**
+         * Lo que se anuncia: el evento y cuándo queda. `edge` dice qué extremo cambió: el
+         * inicio al mover, el fin al redimensionar.
+         */
+        describe(k, state, edge = 'start') {
             const fmt = new Intl.DateTimeFormat(this.locale, k.allDay
                 ? { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' }
                 : { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
 
-            // Los textos llegan traducidos del servidor (translations.kbd_*).
-            return `${k.event.title}: ${fmt.format(new Date(k.start * 1000))}. ${this.texts[state] ?? ''}`.trim();
+            // Un día completo se guarda con el fin exclusivo; se anuncia su último día («termina el 6», no «el 7»),
+            // como hace el servidor al soltar.
+            const at = edge === 'end' ? (k.allDay ? k.end - DAY : k.end) : k.start;
+            const when = fmt.format(new Date(at * 1000));
+
+            // Los textos llegan traducidos del servidor (translations.kbd_*, y event_resized como plantilla).
+            // Una sola pasada: un título con «:date» no se vuelve a sustituir dentro del texto ya insertado.
+            const sentence = edge === 'end' && this.texts.resized
+                ? this.texts.resized.replace(/:(title|date)/g, (_, name) => (name === 'title' ? k.event.title : when))
+                : `${k.event.title}: ${when}`;
+
+            return `${sentence}. ${this.texts[state] ?? ''}`.trim();
         },
     };
 }

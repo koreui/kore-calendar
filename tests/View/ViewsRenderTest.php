@@ -80,3 +80,67 @@ it('cada evento lleva su instanceId: las ocurrencias de una serie comparten el i
         // El id del evento sigue ahí (el foco, los tests y el HTML anterior lo usan) y es el mismo en las tres.
         ->and(substr_count($html, 'data-kore-event="serie"'))->toBe(3);
 });
+
+// ── Días de relleno del mes ───────────────────────────────────────────
+
+it('los días de los meses vecinos usan --kore-calendar-other-month, en el número y en el fondo', function () use ($render) {
+    // Octubre de 2026 con la semana en lunes: 28, 29 y 30 de septiembre y 1 a 8 de noviembre = 11 celdas de relleno.
+    $html = $render('month');
+
+    expect(substr_count($html, 'kore-calendar-day-other'))->toBe(11)
+        ->and(substr_count($html, 'kore-calendar-other-number'))->toBe(11);
+
+    // El número ya no se atenúa con una clase de Tailwind que ignora el token.
+    preg_match_all('/<span\s[^>]*class="([^"]*kore-calendar-other-number[^"]*)"/s', $html, $numeros);
+
+    expect($numeros[1])->toHaveCount(11);
+
+    foreach ($numeros[1] as $clases) {
+        expect($clases)->not->toContain('text-kore-muted-fg');
+    }
+});
+
+it('hoy en un mes vecino conserva su resalte y no se atenúa como relleno', function () {
+    // Hoy es el 2 de noviembre: la vista de octubre lo enseña como día de relleno.
+    \Carbon\CarbonImmutable::setTestNow('2026-11-02 12:00:00 UTC');
+
+    try {
+        $calendar = CalendarRenderer::render(CalendarSettings::make(['view' => 'month', 'date' => '2026-10-16', 'timezone' => 'UTC']), []);
+        $html = (string) test()->blade('<x-kore::calendar.month :calendar="$calendar" />', ['calendar' => $calendar]);
+    } finally {
+        \Carbon\CarbonImmutable::setTestNow();
+    }
+
+    preg_match_all('/<div[^>]*role="cell"[^>]*>/s', $html, $celdas);
+    $hoy = array_values(array_filter($celdas[0], fn ($c) => str_contains($c, 'aria-current="date"')));
+
+    expect($hoy)->toHaveCount(1)
+        ->and($hoy[0])->toContain('kore-calendar-day-today')->not->toContain('kore-calendar-day-other')
+        // Las otras diez celdas de relleno sí se atenúan.
+        ->and(substr_count($html, 'kore-calendar-day-other'))->toBe(10);
+});
+
+it('los días de relleno deshabilitados siguen con su fondo de deshabilitado, no con el de relleno', function () {
+    $calendar = CalendarRenderer::render(CalendarSettings::make(['view' => 'month', 'date' => '2026-10-16', 'timezone' => 'UTC', 'month.show_non_current_dates' => false]), []);
+    $html = (string) test()->blade('<x-kore::calendar.month :calendar="$calendar" />', ['calendar' => $calendar]);
+
+    preg_match_all('/<div[^>]*role="cell"[^>]*>/s', $html, $celdas);
+
+    $deshabilitadas = array_filter($celdas[0], fn ($c) => str_contains($c, 'bg-kore-muted/40'));
+
+    // Hay deshabilitadas (si no, el test no miraría nada) y ninguna lleva además el fondo de relleno.
+    expect($deshabilitadas)->not->toBeEmpty()
+        ->and(array_filter($deshabilitadas, fn ($c) => str_contains($c, 'kore-calendar-day-other')))->toBeEmpty();
+});
+
+it('el CSS usa el token de los días de relleno y lo define para claro y oscuro', function () {
+    $css = file_get_contents(__DIR__.'/../../resources/css/kore-calendar.css');
+    preg_match("/\.dark,\s*\[data-theme='dark'\]\s*\{([^}]*)\}/", $css, $oscuro);
+
+    // Número y fondo salen del mismo token, así que cambiarlo cambia las dos cosas.
+    expect($css)->toMatch('/\.kore-calendar-other-number\s*\{[^}]*color:\s*var\(--kore-calendar-other-month\)/')
+        ->and($css)->toMatch('/\.kore-calendar-day-other\s*\{[^}]*background:[^;}]*var\(--kore-calendar-other-month\)/')
+        // El de hoy se declara después: gana al de relleno cuando coinciden.
+        ->and(strpos($css, '.kore-calendar-day-other'))->toBeLessThan(strpos($css, '.kore-calendar-day-today'))
+        ->and($oscuro[1] ?? '')->toContain('--kore-calendar-other-month:');
+});

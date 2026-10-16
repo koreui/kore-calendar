@@ -21,6 +21,7 @@
     --kore-calendar-timeline-row-min: 2.5rem;
     --kore-calendar-today: color-mix(in oklch, var(--kore-primary) 8%, transparent);
     --kore-calendar-now: var(--kore-destructive);
+    /* Días de relleno del mes (los de los meses vecinos): el número se pinta con este color y el fondo es un tinte suyo. */
     --kore-calendar-other-month: var(--kore-muted-fg);
     /*
      * Horas no laborables. --kore-muted a secas (0,97 sobre un fondo de 1,0) casi no
@@ -34,6 +35,12 @@
 .dark,
 [data-theme='dark'] {
     --kore-calendar-non-business: color-mix(in oklch, var(--kore-muted) 85%, transparent);
+    /*
+     * Se vuelve a declarar para que se resuelva con el --kore-muted-fg del tema oscuro
+     * también cuando `data-theme='dark'` está en un contenedor y no en <html>: un
+     * var() declarado en :root se evalúa allí, y los descendientes heredan el valor claro.
+     */
+    --kore-calendar-other-month: var(--kore-muted-fg);
 }
 
 /* ── Eventos ───────────────────────────────────────────────────────────── */
@@ -91,6 +98,21 @@
 .kore-calendar-month-events {
     position: relative;
     min-height: calc(var(--kc-rows, 0) * (var(--kore-calendar-event-height) + 2px));
+}
+
+/*
+ * Día de un mes vecino: el número con --kore-calendar-other-month y la celda con un
+ * tinte suyo, así que sirve igual en claro y en oscuro y cambiar el token cambia las
+ * dos cosas. Va ANTES que el de hoy: con el mismo peso gana el último, y hoy tiene
+ * que seguir viéndose aunque caiga en un mes vecino. Un día deshabilitado no lo lleva:
+ * ya se atenúa con bg-kore-muted/40 y esta regla, sin capa, la pisaría.
+ */
+.kore-calendar-day-other {
+    background: color-mix(in oklch, var(--kore-calendar-other-month) 5%, transparent);
+}
+
+.kore-calendar-other-number {
+    color: var(--kore-calendar-other-month);
 }
 
 .kore-calendar-day-today {

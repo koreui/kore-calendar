@@ -8,11 +8,20 @@
  *
  * Todo lo de aquí se puede cambiar también por calendario, con la prop de la
  * etiqueta o con `configure()` en la clase base. Lo lee `CalendarSettings`.
+ *
+ * Al publicarlo basta con dejar las claves que cambias: el paquete funde lo tuyo con
+ * estos valores a cualquier profundidad (un `translations` con una sola traducción
+ * conserva las demás). Las listas (`views`, `hidden_days`, los tramos de
+ * `business_hours`) no se funden: la tuya sustituye a la de aquí entera.
  */
 
 return [
 
-    /* Vista inicial: month | week | day | list | resource-week | resource-day | timeline-day | timeline-week | timeline-month */
+    /*
+    | Vista inicial: month | week | day | list | resource-week | resource-day | timeline-day | timeline-week | timeline-month
+    | Cuando la URL (?view=) o la etiqueta (view="…") no piden otra. Si no está en `views`
+    | (o es de recursos y no hay recursos), se abre la primera de `views`.
+    */
     'default_view' => 'month',
 
     /* Vistas del selector. Las de recursos solo se ofrecen si el calendario tiene recursos. */
@@ -65,7 +74,7 @@ return [
             'timeline-month' => '1d',
         ],
         'scroll_time' => '08:00',         // hora a la que se abre un timeline por horas (si no es hoy)
-        'virtualize_after' => 100,        // con más filas, solo se monta una ventana
+        'virtualize_after' => 100,        // con más filas, KoreCalendar monta solo una ventana (<x-kore::calendar> pinta todas: sin Livewire no hay quien dé más)
         'window' => 60,                   // filas por ventana
     ],
 

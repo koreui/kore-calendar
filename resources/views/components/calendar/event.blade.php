@@ -55,7 +55,7 @@
     data-start="{{ $instance->range->start->ts }}"
     data-end="{{ $instance->range->end->ts }}"
     data-all-day="{{ $instance->allDay ? '1' : '0' }}"
-    @if ($movable) data-movable aria-describedby="kore-calendar-kbd-help" @endif
+    @if ($movable) data-movable aria-describedby="{{ $calendar->keyboardHelpId() }}" @endif
     @if ($clickable) data-clickable @endif
     @if (($movable || $clickable) && ! $event->url) tabindex="0" role="button" @endif
     @if ($resizable) data-resizable @endif

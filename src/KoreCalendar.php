@@ -918,9 +918,12 @@ abstract class KoreCalendar extends Component
 
     protected function koreSettingsResolved(): CalendarSettings
     {
-        $views = $this->koreAvailableViews();
-        $default = $this->koreSettings['default_view'] ?? config('kore-calendar.default_view');
-        $view = in_array($this->view, $views, true) ? $this->view : (in_array($default, $views, true) ? $default : ($views[0] ?? 'month'));
+        // La vista de la URL (o de la última `changeView`), después `default_view` y, por
+        // último, la primera que ofrezca. La misma cadena que <x-kore::calendar>.
+        $view = CalendarViews::initial(
+            [$this->view, $this->koreSettings['default_view'] ?? config('kore-calendar.default_view')],
+            $this->koreAvailableViews(),
+        );
 
         return CalendarSettings::make([
             ...$this->koreSettings,
@@ -947,6 +950,7 @@ abstract class KoreCalendar extends Component
             $this->koreSettingsResolved(),
             [new CallbackSource(fn (CarbonImmutable $from, CarbonImmutable $to) => $this->events($from, $to))],
             $this->koreResources(),
+            id: $this->getId(),
         );
     }
 }
