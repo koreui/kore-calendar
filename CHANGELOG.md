@@ -7,6 +7,22 @@ y el proyecto usa [Semantic Versioning](https://semver.org/lang/es/).
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **Los errores y avisos de importar un `.ics` salen en el idioma del calendario.** Los 41 mensajes de `ICalReader` (`ICalException`, `errors()`, `warnings()`) estaban escritos en español dentro del código: una aplicación en inglés enseñaba «Línea 3: el VEVENT no tiene DTSTART». Ahora son las claves `ical_*` de `lang/{es,en}/calendar.php` y se sobrescriben como cualquier otro texto. Quien compare esos mensajes por su texto exacto en una aplicación que no está en español tiene que actualizar la comparación. El formato de ejemplo de una línea mal formada pasa a ser `NAME:value` en los dos idiomas.
+- **«Timeline» pasa a «Cronograma» en español** en las tres vistas (`view_timeline-*`). En inglés sigue siendo «Timeline».
+- **Los títulos llevan mayúscula inicial.** En español la fecha larga empieza por el día de la semana en minúscula («jueves, 12 de noviembre de 2026»); como encabezado —el título de la barra, las cabeceras de la agenda, la ventana de «+N más»— ahora sale «Jueves, 12 de…».
+- **Con una sola fecha en pantalla no se tiñe «hoy».** En las vistas de día y de recursos · día el tinte cubría la rejilla entera.
+- **Un evento estrecho del cronograma se queda en su barra de color.** En un cronograma de semana o de mes el texto se cortaba en «9.» o «1.»; por debajo de 3 rem se recorta para la vista (sigue para el lector de pantalla) y el evento lleva `title` con la hora y el título.
+- **El foco lee el grosor del token `--kore-ring-width`** de kore-ui (clase `kore-calendar-focus`) en vez de llevar 2 px escritos en cada vista.
+
+### Fixed
+
+- **En móvil, el selector de vista medía la mitad que los botones de al lado.** El `<select>` nativo de iOS ignora la altura: 22 px junto a botones de 44. Ahora es un control con su propia flecha.
+- **En una semana por recurso, el nombre del recurso quedaba fuera de la pantalla en móvil.** La cabecera abarca siete columnas y el nombre iba centrado en ellas; ahora va al principio y se queda pegado mientras se desplaza.
+
 ## [0.2.0] — 2026-11-12
 
 ### Changed

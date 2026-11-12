@@ -130,6 +130,8 @@ Para cambiar un solo calendario, define los tokens en su clase (el `class` del c
 }
 ```
 
+El foco de teclado usa `--kore-ring` y `--kore-ring-width` de kore-ui (clase `.kore-calendar-focus` y los eventos): cambiando esos dos tokens cambia también aquí. No lleva la separación de `kore-focus` porque dentro de una celda con `overflow: hidden` un contorno separado se recorta.
+
 Para cambiar algo que no es un token (el borde de un evento, por ejemplo), estas son las clases a las que se puede apuntar: `.kore-calendar-event`, `.kore-calendar-dot`, `.kore-calendar-month-slot`, `.kore-calendar-day-other` (celda de relleno del mes), `.kore-calendar-other-number` (su número), `.kore-calendar-timed`, `.kore-calendar-now`, `.kore-calendar-slots` (las líneas de las ranuras de una columna de la rejilla horaria: un degradado con `--kore-border`, la hora en punto continua y las demás ranuras discontinuas y tenues), `.kore-calendar-timeline-lane`, `.kore-calendar-non-business`, `.kore-calendar-conflict`, `.kore-calendar-preview`. Los atributos `data-continues-before`, `data-continues-after`, `data-conflict` y `data-invalid` (la previsualización fuera de horario) sirven de selector.
 
 ## Pantallas estrechas
