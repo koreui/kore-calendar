@@ -77,7 +77,7 @@ it('en modo enlaces hay un select nativo con las mismas vistas que los botones y
         ->and($select['attrs'])->toContain('aria-label="Vista"')
         ->and(array_column($select['options'], 'value'))->toBe(config('kore-calendar.views'))
         ->and(array_column($select['options'], 'value'))->toBe($botones)
-        ->and(array_column($select['options'], 'text'))->toContain('Mes', 'Agenda', 'Timeline · día')
+        ->and(array_column($select['options'], 'text'))->toContain('Mes', 'Agenda', 'Cronograma · día')
         // Tres vistas por recurso y dos de timeline, si hay recursos: las nueve.
         ->and($select['options'])->toHaveCount(9);
 });

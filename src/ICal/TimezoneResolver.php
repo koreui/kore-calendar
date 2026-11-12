@@ -89,7 +89,7 @@ final class TimezoneResolver
 
         if ($definition === null) {
             throw new ICalException(
-                "Línea {$line}: el TZID «{$tzid}» no es una zona horaria conocida y el archivo no trae su VTIMEZONE, así que no se sabe a qué hora corresponde.",
+                ICalText::of('tzid_unknown', ['line' => $line, 'tzid' => $tzid]),
                 $line,
             );
         }
@@ -100,13 +100,13 @@ final class TimezoneResolver
 
         if ($this->inferred[$key] === self::FIXED) {
             $offset = self::offsetName($definition->offsetAt(gmmktime(0, 0, 0, 7, 15, $year)));
-            $this->warnOnce($tzid, "Línea {$line}: el TZID «{$tzid}» no es una zona IANA; su VTIMEZONE no tiene cambios de hora y se usó el desplazamiento fijo {$offset}.");
+            $this->warnOnce($tzid, ICalText::of('tzid_fixed_offset', ['line' => $line, 'tzid' => $tzid, 'offset' => $offset]));
 
             return new DateTimeZone($offset);
         }
 
         if ($this->inferred[$key] !== '') {
-            $this->warnOnce($tzid, "Línea {$line}: el TZID «{$tzid}» no es una zona IANA; se usó la definición de su VTIMEZONE, que coincide con «{$this->inferred[$key]}».");
+            $this->warnOnce($tzid, ICalText::of('tzid_inferred', ['line' => $line, 'tzid' => $tzid, 'zone' => $this->inferred[$key]]));
 
             return new DateTimeZone($this->inferred[$key]);
         }
@@ -116,12 +116,7 @@ final class TimezoneResolver
         $guess = $wall->getTimestamp() - $definition->offsetAt($wall->getTimestamp());
         $offset = $definition->offsetAt($guess);
 
-        $this->warnOnce($tzid, sprintf(
-            'Línea %d: el TZID «%s» no es una zona IANA y ninguna coincide con su VTIMEZONE; se usa el desplazamiento %s en la fecha de cada evento (una serie no seguirá los cambios de hora).',
-            $line,
-            $tzid,
-            self::offsetName($offset),
-        ));
+        $this->warnOnce($tzid, ICalText::of('tzid_unmatched', ['line' => $line, 'tzid' => $tzid, 'offset' => self::offsetName($offset)]));
 
         return new DateTimeZone(self::offsetName($offset));
     }

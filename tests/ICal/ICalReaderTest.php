@@ -553,7 +553,7 @@ it('una línea que no es NOMBRE:valor rompe el VEVENT que la contiene, con su l�
     ));
 
     expect(array_map(fn ($e) => $e->id, $events))->toBe(['b'])
-        ->and($reader->errors()[0])->toStartWith('Línea 7: no es una propiedad iCalendar válida (se espera NOMBRE:valor): «esto no es una propiedad»');
+        ->and($reader->errors()[0])->toStartWith('Línea 7: no es una propiedad iCalendar válida (se espera NAME:value): «esto no es una propiedad»');
 });
 
 it('un parámetro con comillas sin cerrar es un error de línea', function () {

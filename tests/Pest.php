@@ -9,4 +9,10 @@ ini_set('memory_limit', '512M');
 
 uses(TestCase::class)->in(__DIR__);
 
+// Los tests del lector iCal comprueban los mensajes en español, que es como se escribieron.
+// Desde que esos mensajes salen de `lang/` siguen el idioma de la aplicación, y el de
+// Testbench es el inglés: aquí se fija el español. Que también salen en inglés lo
+// comprueba tests/ICal/ICalIdiomasTest.php, que lo cambia por su cuenta.
+uses()->beforeEach(fn () => app()->setLocale('es'))->in('ICal');
+
 require_once __DIR__.'/Layout/helpers.php';

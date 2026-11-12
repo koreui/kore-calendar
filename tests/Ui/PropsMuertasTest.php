@@ -122,6 +122,16 @@ it('ninguna clave de traducción se queda sin usar', function () {
             }
         }
 
+        // Los mensajes del lector iCal se piden sin el prefijo: `ICalText::of('no_dtstart')`.
+        // No se excusan en bloque — cada uno tiene que aparecer en una llamada de verdad.
+        if (str_starts_with($clave, 'ical_')) {
+            if (! str_contains($fuentes, "ICalText::of('".substr($clave, 5)."'")) {
+                $huerfanas[] = $clave;
+            }
+
+            continue;
+        }
+
         if (! str_contains($fuentes, "'".$clave."'") && ! str_contains($fuentes, '.'.$clave."'")) {
             $huerfanas[] = $clave;
         }

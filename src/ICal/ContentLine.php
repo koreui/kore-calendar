@@ -55,7 +55,7 @@ final class ContentLine
         $name = strtoupper(trim(substr($raw, 0, $i)));
 
         if ($i >= $length || $name === '' || ! preg_match('/^[A-Z0-9.-]+$/D', $name)) {
-            $error = "Línea {$line}: no es una propiedad iCalendar válida (se espera NOMBRE:valor): «".self::preview($raw).'».';
+            $error = ICalText::of('line_invalid', ['line' => $line, 'format' => 'NAME:value', 'preview' => self::preview($raw)]);
 
             return null;
         }
@@ -82,7 +82,7 @@ final class ContentLine
                     $close = strpos($raw, '"', $i + 1);
 
                     if ($close === false) {
-                        $error = "Línea {$line}: el parámetro ".self::preview($paramName).' abre comillas y no las cierra.';
+                        $error = ICalText::of('param_unclosed_quote', ['line' => $line, 'param' => self::preview($paramName)]);
 
                         return null;
                     }
@@ -104,7 +104,7 @@ final class ContentLine
         }
 
         if ($i >= $length || $raw[$i] !== ':') {
-            $error = "Línea {$line}: la propiedad {$name} no tiene «:» antes del valor.";
+            $error = ICalText::of('missing_colon', ['line' => $line, 'name' => $name]);
 
             return null;
         }

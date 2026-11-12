@@ -62,7 +62,7 @@ final class TimezoneDefinition
         $tzid = trim(Text::unescape($vtimezone->first('TZID')->value ?? ''));
 
         if ($tzid === '') {
-            throw new ICalException("Línea {$vtimezone->line}: el VTIMEZONE no tiene TZID.", $vtimezone->line);
+            throw new ICalException(ICalText::of('tz_no_tzid', ['line' => $vtimezone->line]), $vtimezone->line);
         }
 
         $components = [];
@@ -78,20 +78,20 @@ final class TimezoneDefinition
             $to = $child->first('TZOFFSETTO');
 
             if ($start === null || $from === null || $to === null) {
-                throw new ICalException("Línea {$child->line}: el {$child->name} del VTIMEZONE «{$tzid}» necesita DTSTART, TZOFFSETFROM y TZOFFSETTO.", $child->line);
+                throw new ICalException(ICalText::of('tz_incomplete', ['line' => $child->line, 'name' => $child->name, 'tzid' => $tzid]), $child->line);
             }
 
             $rule = $child->first('RRULE');
 
             if ($rule !== null && RuleScanner::frequency($rule->value) !== 'YEARLY') {
-                throw new ICalException("Línea {$rule->line}: el {$child->name} del VTIMEZONE «{$tzid}» tiene una RRULE que no es FREQ=YEARLY; un VTIMEZONE cambia de hora una vez al año como mucho, así que se ignora su definición.", $rule->line);
+                throw new ICalException(ICalText::of('tz_rrule_not_yearly', ['line' => $rule->line, 'name' => $child->name, 'tzid' => $tzid]), $rule->line);
             }
 
             $rdates = [];
             foreach ($child->all('RDATE') as $rdate) {
                 foreach (explode(',', $rdate->value) as $piece) {
                     if (++$rdateCount > self::MAX_RDATES) {
-                        throw new ICalException("Línea {$rdate->line}: el VTIMEZONE «{$tzid}» tiene más de ".self::MAX_RDATES.' fechas RDATE; se ignora su definición.', $rdate->line);
+                        throw new ICalException(ICalText::of('tz_too_many_rdate', ['line' => $rdate->line, 'tzid' => $tzid, 'max' => self::MAX_RDATES]), $rdate->line);
                     }
 
                     $rdates[] = self::wall($rdate, trim($piece));
@@ -109,7 +109,7 @@ final class TimezoneDefinition
         }
 
         if ($components === []) {
-            throw new ICalException("Línea {$vtimezone->line}: el VTIMEZONE «{$tzid}» no define ningún STANDARD ni DAYLIGHT.", $vtimezone->line);
+            throw new ICalException(ICalText::of('tz_empty', ['line' => $vtimezone->line, 'tzid' => $tzid]), $vtimezone->line);
         }
 
         $location = $vtimezone->first('X-LIC-LOCATION');
@@ -221,7 +221,7 @@ final class TimezoneDefinition
     private static function offset(ContentLine $line): int
     {
         if (! preg_match('/^([+-])(\d{2})(\d{2})(\d{2})?$/D', trim($line->value), $m)) {
-            throw new ICalException("Línea {$line->line}: {$line->name} «{$line->value}» no es un desplazamiento válido (se espera +0200 o -0500).", $line->line);
+            throw new ICalException(ICalText::of('tz_offset_invalid', ['line' => $line->line, 'name' => $line->name, 'value' => $line->value]), $line->line);
         }
 
         $seconds = (int) $m[2] * 3600 + (int) $m[3] * 60 + (int) ($m[4] ?? 0);
@@ -232,7 +232,7 @@ final class TimezoneDefinition
     private static function wall(ContentLine $line, string $value): int
     {
         if (! preg_match('/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?$/D', $value, $m)) {
-            throw new ICalException("Línea {$line->line}: {$line->name} «{$value}» no es una fecha y hora válida (se espera 20261025T030000).", $line->line);
+            throw new ICalException(ICalText::of('tz_datetime_invalid', ['line' => $line->line, 'name' => $line->name, 'value' => $value]), $line->line);
         }
 
         return gmmktime((int) $m[4], (int) $m[5], (int) ($m[6] ?? 0), (int) $m[2], (int) $m[3], (int) $m[1]);

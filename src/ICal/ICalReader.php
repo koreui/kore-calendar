@@ -121,17 +121,13 @@ final class ICalReader
         $this->stopped = null;
 
         if (strlen($ics) > $o['maxBytes']) {
-            throw new ICalException(sprintf(
-                'El archivo pesa %s y el máximo que se lee es %s (opción maxBytes de ICalReader, o `ical.max_bytes` en el config).',
-                self::size(strlen($ics)),
-                self::size($o['maxBytes']),
-            ));
+            throw new ICalException(ICalText::of('too_big', ['size' => self::size(strlen($ics)), 'max' => self::size($o['maxBytes'])]));
         }
 
         $calendars = $this->parse($ics, $o);
 
         if ($calendars === []) {
-            throw new ICalException('El contenido no es un archivo iCalendar: no se encontró BEGIN:VCALENDAR.');
+            throw new ICalException(ICalText::of('not_icalendar'));
         }
 
         $events = [];
@@ -151,7 +147,7 @@ final class ICalReader
             $this->warningCount += $calendar->dropped;
 
             if (($version = $calendar->first('VERSION')) !== null && trim($version->value) !== '2.0') {
-                $this->warn("Línea {$version->line}: VERSION «".trim($version->value).'» no es 2.0; se lee como iCalendar 2.0.');
+                $this->warn(ICalText::of('version', ['line' => $version->line, 'version' => trim($version->value)]));
             }
 
             $this->calendarName ??= ($name = $calendar->first('X-WR-CALNAME')) !== null ? trim(Text::unescape($name->value)) : null;
@@ -189,7 +185,7 @@ final class ICalReader
                 }
 
                 if (isset($seen[(string) $event->id])) {
-                    $this->warn("Línea {$child->line}: el UID «{$event->id}» está repetido; los dos eventos se conservan.");
+                    $this->warn(ICalText::of('uid_repeated', ['line' => $child->line, 'uid' => $event->id]));
                 }
 
                 $seen[(string) $event->id] = true;
@@ -313,7 +309,7 @@ final class ICalReader
                 $name = strtoupper(trim($line->value));
 
                 if (($open[$name] ?? 0) === 0) {
-                    $this->warn("Línea {$no}: END:{$name} sin su BEGIN; se ignora.");
+                    $this->warn(ICalText::of('end_without_begin', ['line' => $no, 'name' => $name]));
 
                     continue;
                 }
@@ -322,7 +318,7 @@ final class ICalReader
                 while ($stack[array_key_last($stack)]->name !== $name) {
                     $broken = array_pop($stack);
                     $open[$broken->name]--;
-                    $broken->unclosed("Línea {$broken->line}: el {$broken->name} no se cierra (falta END:{$broken->name}).", $broken->line);
+                    $broken->unclosed(ICalText::of('unclosed', ['line' => $broken->line, 'name' => $broken->name]), $broken->line);
                 }
 
                 array_pop($stack);
@@ -333,7 +329,7 @@ final class ICalReader
 
             // Cada componente y cada propiedad que se guarda es un objeto en memoria: acotados por el tamaño permitido.
             if (++$items > $maxItems) {
-                $this->stopped = ['line' => $no, 'message' => "Línea {$no}: el archivo tiene demasiadas líneas para su tamaño máximo; se dejó de leer aquí."];
+                $this->stopped = ['line' => $no, 'message' => ICalText::of('too_many_lines', ['line' => $no])];
 
                 break;
             }
@@ -346,17 +342,17 @@ final class ICalReader
                     && (in_array($name, self::BLOCKS, true) || $name === 'VCALENDAR')) {
                     $broken = array_pop($stack);
                     $open[$broken->name]--;
-                    $broken->unclosed("Línea {$broken->line}: el {$broken->name} no se cierra (falta END:{$broken->name}).", $broken->line);
+                    $broken->unclosed(ICalText::of('unclosed', ['line' => $broken->line, 'name' => $broken->name]), $broken->line);
                 }
 
                 if ($name === 'VEVENT' && ++$events > $o['maxEvents']) {
-                    $this->stopped = ['line' => $no, 'message' => "Línea {$no}: el archivo tiene más de {$o['maxEvents']} VEVENT (opción maxEvents); se dejó de leer aquí."];
+                    $this->stopped = ['line' => $no, 'message' => ICalText::of('too_many_events', ['line' => $no, 'max' => $o['maxEvents']])];
 
                     break;
                 }
 
                 if (count($stack) >= self::MAX_DEPTH) {
-                    $this->stopped = ['line' => $no, 'message' => 'Línea '.$no.': los componentes están anidados a más de '.self::MAX_DEPTH.' niveles; se dejó de leer aquí.'];
+                    $this->stopped = ['line' => $no, 'message' => ICalText::of('too_deep', ['line' => $no, 'max' => self::MAX_DEPTH])];
 
                     break;
                 }
@@ -383,7 +379,7 @@ final class ICalReader
         // Si se dejó de leer por un tope, lo que sigue abierto no es un archivo truncado.
         if ($this->stopped === null) {
             foreach ($stack as $unclosed) {
-                $unclosed->unclosed("Línea {$unclosed->line}: el {$unclosed->name} no se cierra (falta END:{$unclosed->name}); el archivo parece truncado.", $unclosed->line);
+                $unclosed->unclosed(ICalText::of('unclosed_truncated', ['line' => $unclosed->line, 'name' => $unclosed->name]), $unclosed->line);
             }
         }
 
@@ -426,7 +422,7 @@ final class ICalReader
     {
         if (! $this->recoded) {
             $this->recoded = true;
-            $this->warn('El archivo no está en UTF-8; se interpretó como Windows-1252.');
+            $this->warn(ICalText::of('not_utf8'));
         }
 
         return mb_convert_encoding($text, 'UTF-8', 'Windows-1252');
@@ -446,7 +442,7 @@ final class ICalReader
         }
 
         $startLine = $v->first('DTSTART')
-            ?? throw new ICalException("Línea {$v->line}: el VEVENT no tiene DTSTART.", $v->line);
+            ?? throw new ICalException(ICalText::of('no_dtstart', ['line' => $v->line]), $v->line);
 
         $start = $this->date($startLine, $tz);
         $end = null;
@@ -477,7 +473,7 @@ final class ICalReader
 
         if ($rules !== []) {
             if (count($rules) > 1) {
-                $this->warn("Línea {$rules[1]->line}: el VEVENT tiene varios RRULE; solo se usa el primero.");
+                $this->warn(ICalText::of('many_rrule', ['line' => $rules[1]->line]));
             }
 
             $rrule = $this->rule($rules[0], $start);
@@ -485,7 +481,7 @@ final class ICalReader
 
         foreach (['RDATE', 'EXRULE'] as $name) {
             if (($line = $v->first($name)) !== null) {
-                $this->warn("Línea {$line->line}: {$name} no se puede representar y se ignora; la serie puede mostrar ocurrencias de más o de menos.");
+                $this->warn(ICalText::of('unrepresentable', ['line' => $line->line, 'name' => $name]));
             }
         }
 
@@ -499,7 +495,7 @@ final class ICalReader
 
                 // Cada EXDATE es un objeto, y el expansor los compara en cada render.
                 if (count($exdates) >= self::MAX_EXDATES) {
-                    $this->warn("Línea {$line->line}: el VEVENT tiene más de ".self::MAX_EXDATES.' EXDATE; se ignoran los demás.');
+                    $this->warn(ICalText::of('too_many_exdate', ['line' => $line->line, 'max' => self::MAX_EXDATES]));
                     break 2;
                 }
 
@@ -513,18 +509,18 @@ final class ICalReader
             $recurrence = $this->date($line, $tz);
 
             if (($range = $line->param('RANGE')) !== null) {
-                $this->warn("Línea {$line->line}: RECURRENCE-ID;RANGE={$range} está obsoleto y no se soporta; se trata como una sola ocurrencia.");
+                $this->warn(ICalText::of('range_obsolete', ['line' => $line->line, 'range' => $range]));
             }
 
             if ($rrule !== null) {
-                $this->warn("Línea {$line->line}: una ocurrencia modificada no puede llevar RRULE; se ignora.");
+                $this->warn(ICalText::of('override_with_rrule', ['line' => $line->line]));
                 $rrule = null;
                 $exdates = [];
             }
         }
 
         if ($exdates !== [] && $rrule === null) {
-            $this->warn('Línea '.$v->first('EXDATE')->line.': EXDATE sin RRULE no excluye nada; se ignora.');
+            $this->warn(ICalText::of('exdate_without_rrule', ['line' => $v->first('EXDATE')->line]));
             $exdates = [];
         }
 
@@ -534,12 +530,12 @@ final class ICalReader
 
         if ($uid === '') {
             if ($o['strict']) {
-                throw new ICalException("Línea {$v->line}: el VEVENT no tiene UID (RFC 5545 lo exige).", $v->line);
+                throw new ICalException(ICalText::of('no_uid_strict', ['line' => $v->line]), $v->line);
             }
 
             // Sin UID no hay id estable entre lecturas: se deriva del contenido.
             $uid = 'ical-'.substr(sha1($title.'|'.$startLine->value.'|'.($rrule ?? '')), 0, 12);
-            $this->warn("Línea {$v->line}: el VEVENT no tiene UID; se le dio el id «{$uid}».");
+            $this->warn(ICalText::of('no_uid', ['line' => $v->line, 'uid' => $uid]));
         }
 
         // El prefijo va delante del id y del recurrenceOf: sin él, un UID `1` de un archivo ajeno
@@ -558,7 +554,7 @@ final class ICalReader
         $url = ($line = $v->first('URL')) !== null ? trim($line->value) : '';
 
         if ($url !== '' && ! self::safeUrl($url)) {
-            $this->warn("Línea {$line->line}: la URL «".self::preview($url).'» no es relativa ni http, https, mailto o tel; se descarta.');
+            $this->warn(ICalText::of('url_discarded', ['line' => $line->line, 'url' => self::preview($url)]));
             $url = '';
         }
 
@@ -579,7 +575,7 @@ final class ICalReader
                 'recurrenceId' => $recurrence?->toEventValue(),
             ]);
         } catch (InvalidArgumentException $e) {
-            throw new ICalException("Línea {$v->line}: evento «{$id}»: {$e->getMessage()}", $v->line, $e);
+            throw new ICalException(ICalText::of('event_error', ['line' => $v->line, 'id' => $id, 'reason' => $e->getMessage()]), $v->line, $e);
         }
     }
 
@@ -654,7 +650,7 @@ final class ICalReader
 
         if (($attendees = $v->all('ATTENDEE')) !== []) {
             if (count($attendees) > self::MAX_ATTENDEES) {
-                $this->warn("Línea {$attendees[self::MAX_ATTENDEES]->line}: el VEVENT tiene más de ".self::MAX_ATTENDEES.' ATTENDEE; se ignoran los demás.');
+                $this->warn(ICalText::of('too_many_attendees', ['line' => $attendees[self::MAX_ATTENDEES]->line, 'max' => self::MAX_ATTENDEES]));
                 $attendees = array_slice($attendees, 0, self::MAX_ATTENDEES);
             }
 
@@ -704,7 +700,7 @@ final class ICalReader
 
         if (! preg_match('/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})?(Z)?)?$/i', $value, $m)) {
             throw new ICalException(
-                "Línea {$line->line}: {$line->name} «{$value}» no es una fecha iCalendar válida (se espera 20261016, 20261016T090000 o 20261016T090000Z).",
+                ICalText::of('date_invalid', ['line' => $line->line, 'name' => $line->name, 'value' => $value]),
                 $line->line,
             );
         }
@@ -717,7 +713,7 @@ final class ICalReader
         $s = min($s, 59);
 
         if (! checkdate($mo, $d, $y) || $h > 23 || $i > 59) {
-            throw new ICalException("Línea {$line->line}: {$line->name} «{$value}» no es una fecha que exista.", $line->line);
+            throw new ICalException(ICalText::of('date_nonexistent', ['line' => $line->line, 'name' => $line->name, 'value' => $value]), $line->line);
         }
 
         if (! $hasTime) {
@@ -747,7 +743,7 @@ final class ICalReader
         $value = trim($line->value);
 
         if (! preg_match('/^([+-])?P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/i', $value, $m) || $value === 'P' || ! preg_match('/\d/', $value)) {
-            throw new ICalException("Línea {$line->line}: DURATION «{$value}» no es una duración válida (se espera P1D, PT1H30M, P1W…).", $line->line);
+            throw new ICalException(ICalText::of('duration_invalid', ['line' => $line->line, 'value' => $value]), $line->line);
         }
 
         $days = (int) ($m[2] ?? 0) * 7 + (int) ($m[3] ?? 0);
@@ -773,7 +769,7 @@ final class ICalReader
                 $start->dt,
             );
         } catch (InvalidArgumentException $e) {
-            throw new ICalException("Línea {$line->line}: RRULE «{$rule}» no válida ({$e->getMessage()}).", $line->line, $e);
+            throw new ICalException(ICalText::of('rrule_invalid', ['line' => $line->line, 'rule' => $rule, 'reason' => $e->getMessage()]), $line->line, $e);
         }
 
         return $rule;
