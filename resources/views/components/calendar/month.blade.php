@@ -36,7 +36,7 @@
     aria-label="{{ $calendar->title() }}"
     x-data="KoreCalendarGrid({ columns: {{ $columns }} })"
     x-on:keydown="onKeydown($event)"
-    {{ $attributes->class('kore-calendar-month w-full overflow-hidden rounded-kore-lg border border-kore-border bg-kore-bg text-kore-fg') }}
+    {{ $attributes->class('kore-calendar-month w-full overflow-hidden rounded-kore-lg border border-kore-border bg-kore-surface text-kore-fg shadow-kore-xs') }}
 >
     <div role="rowgroup">
         <div role="row" class="grid border-b border-kore-border" style="grid-template-columns: {{ $template }}">
@@ -44,7 +44,7 @@
                 <div role="columnheader" class="px-1 py-2 text-center text-xs text-kore-muted-fg">{{ $calendar->text('week') }}</div>
             @endif
             @foreach (array_slice($layout->rows[0]['days'] ?? [], 0, $columns) as $cell)
-                <div role="columnheader" class="px-2 py-2 text-center text-xs font-medium uppercase tracking-wide text-kore-muted-fg">
+                <div role="columnheader" class="px-2 py-2 text-center text-xs font-medium text-kore-muted-fg">
                     {{ $calendar->format($cell['date'], 'weekday') }}
                 </div>
             @endforeach

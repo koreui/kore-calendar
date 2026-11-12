@@ -8,7 +8,7 @@
     $layout = $calendar->layout;
 @endphp
 
-<div {{ $attributes->class('kore-calendar-list overflow-hidden rounded-kore-lg border border-kore-border bg-kore-bg text-kore-fg') }}>
+<div {{ $attributes->class('kore-calendar-list overflow-hidden rounded-kore-lg border border-kore-border bg-kore-surface text-kore-fg shadow-kore-xs') }}>
     @if ($layout->days === [])
         <p role="status" class="px-4 py-10 text-center text-sm text-kore-muted-fg">{{ $calendar->text('no_events') }}</p>
     @else

@@ -124,11 +124,12 @@ it('el selector de recurso solo está si el calendario tiene recursos', function
 });
 
 it('ofrece los trece colores traducidos, y el suyo si no es de la lista', function () {
-    // Las opciones viajan en un nodo JSON (el panel del select se teleporta y el morph no lo alcanza):
-    // los acentos van escapados como \uXXXX.
+    // Cada color es un radio con su muestra; el nombre va en un `sr-only` para el lector de pantalla.
     $t = Livewire::test(EventForm::class, efArgs())
         ->assertSee('Primario')->assertSee('Paleta 1')->assertSee('Paleta 8')->assertSee('Peligro')
-        ->assertSeeHtml('\u00c9xito');
+        ->assertSee('Éxito');
+
+    expect(efOpcionesDeColor($t))->toHaveCount(count(EventFormPayload::COLORS));
 
     expect($t->html())->not->toContain('#ff8800');
 
@@ -137,18 +138,26 @@ it('ofrece los trece colores traducidos, y el suyo si no es de la lista', functi
         ->assertSet('color', '#ff8800');
 });
 
-/** Las opciones del selector de color, tal como viajan en el JSON de la página. */
+/**
+ * Las opciones del selector de color, tal como están en la página: un radio por color, con su
+ * valor en `value` y su nombre en el `sr-only` de al lado. La de «sin color» (valor vacío) no
+ * cuenta. Los valores se leen ya decodificados, que es como los ve el navegador.
+ */
 function efOpcionesDeColor($t): array
 {
-    preg_match_all('#<script type="application/json"[^>]*>(.*?)</script>#s', $t->html(), $m);
+    preg_match_all('#<input type="radio"[^>]*\bvalue="([^"]*)"[^>]*>.*?<span class="sr-only">(.*?)</span>#s', $t->html(), $m, PREG_SET_ORDER);
 
-    foreach ($m[1] as $json) {
-        if (str_contains($json, 'Primario')) {
-            return json_decode($json, true);
+    $opciones = [];
+
+    foreach ($m as [, $valor, $etiqueta]) {
+        if ($valor === '') {
+            continue;
         }
+
+        $opciones[] = ['value' => html_entity_decode($valor, ENT_QUOTES), 'label' => trim(html_entity_decode($etiqueta, ENT_QUOTES))];
     }
 
-    return [];
+    return $opciones;
 }
 
 it('un color propio válido se ofrece con una etiqueta fija, nunca con su valor', function (string $color) {
@@ -163,7 +172,8 @@ it('un color propio que no es un color CSS no se ofrece ni se pinta en la págin
     $t = Livewire::test(EventForm::class, efArgs(['mode' => 'edit', 'eventId' => 1, 'color' => $color]));
     $opciones = efOpcionesDeColor($t);
 
-    // kore-ui pega ese JSON sin escapar en la página: un `<!--` o un `</script>` en él la rompería.
+    // El valor acaba en un atributo `value` y en un `style`: un `<!--`, un `</script>` o una declaración
+    // de más no pueden llegar ahí. `EventColor` lo descarta antes, y Blade escapa lo que sí se pinta.
     expect(json_encode($opciones))->not->toContain('script')->and(json_encode($opciones))->not->toContain('onerror')
         ->and(array_column($opciones, 'value'))->not->toContain($color)
         ->and(array_column($opciones, 'label'))->not->toContain($color)

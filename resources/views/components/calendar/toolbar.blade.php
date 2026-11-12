@@ -41,13 +41,13 @@
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
         <div class="flex items-center gap-1">
             @if ($mode === 'livewire')
-                <x-kore::button size="sm" variant="ghost" icon="chevron-left" class="kore-calendar-target" wire:click="previous" :aria-label="$calendar->text('previous')" />
-                <x-kore::button size="sm" variant="outline" class="kore-calendar-target" wire:click="today" :label="$calendar->text('today')" />
-                <x-kore::button size="sm" variant="ghost" icon="chevron-right" class="kore-calendar-target" wire:click="next" :aria-label="$calendar->text('next')" />
+                <x-kore::button size="sm" variant="outline" color="secondary" icon="chevron-left" class="kore-calendar-target" wire:click="previous" :aria-label="$calendar->text('previous')" />
+                <x-kore::button size="sm" variant="outline" color="secondary" class="kore-calendar-target" wire:click="today" :label="$calendar->text('today')" />
+                <x-kore::button size="sm" variant="outline" color="secondary" icon="chevron-right" class="kore-calendar-target" wire:click="next" :aria-label="$calendar->text('next')" />
             @else
-                <x-kore::button size="sm" variant="ghost" icon="chevron-left" class="kore-calendar-target" :href="$link([$dateParam => $range->previous()->toDateString()])" :aria-label="$calendar->text('previous')" />
-                <x-kore::button size="sm" variant="outline" class="kore-calendar-target" :href="$link([$dateParam => $today])" :label="$calendar->text('today')" />
-                <x-kore::button size="sm" variant="ghost" icon="chevron-right" class="kore-calendar-target" :href="$link([$dateParam => $range->next()->toDateString()])" :aria-label="$calendar->text('next')" />
+                <x-kore::button size="sm" variant="outline" color="secondary" icon="chevron-left" class="kore-calendar-target" :href="$link([$dateParam => $range->previous()->toDateString()])" :aria-label="$calendar->text('previous')" />
+                <x-kore::button size="sm" variant="outline" color="secondary" class="kore-calendar-target" :href="$link([$dateParam => $today])" :label="$calendar->text('today')" />
+                <x-kore::button size="sm" variant="outline" color="secondary" icon="chevron-right" class="kore-calendar-target" :href="$link([$dateParam => $range->next()->toDateString()])" :aria-label="$calendar->text('next')" />
             @endif
         </div>
 
@@ -66,15 +66,20 @@
         >{{ $calendar->title() }}</h2>
 
         @if ($hasViews)
-            <div role="group" aria-label="{{ $calendar->text('views') }}" class="hidden flex-wrap gap-1 @2xl:flex">
+            {{--
+                Un control segmentado, no nueve botones sueltos: una pista con la vista elegida en relieve.
+                El botón primario sólido que marcaba la vista activa competía con «Guardar» y con cualquier
+                acción de la página; aquí elegir vista es navegar, no actuar.
+            --}}
+            <div role="group" aria-label="{{ $calendar->text('views') }}" class="hidden flex-wrap gap-0.5 rounded-kore-md bg-kore-muted p-0.5 @2xl:flex">
                 @foreach ($views as $view)
                     @php
                         $active = $view === $current;
                     @endphp
                     @if ($mode === 'livewire')
-                        <x-kore::button size="sm" :variant="$active ? 'solid' : 'ghost'" class="kore-calendar-target" wire:click="changeView('{{ $view }}')" :label="$calendar->text('view_'.$view)" :aria-pressed="$active ? 'true' : 'false'" />
+                        <x-kore::button size="sm" :variant="$active ? 'outline' : 'ghost'" color="secondary" :class="$active ? 'kore-calendar-target' : 'kore-calendar-target text-kore-muted-fg hover:text-kore-fg'" wire:click="changeView('{{ $view }}')" :label="$calendar->text('view_'.$view)" :aria-pressed="$active ? 'true' : 'false'" />
                     @else
-                        <x-kore::button size="sm" :variant="$active ? 'solid' : 'ghost'" class="kore-calendar-target" :href="$link([$viewParam => $view])" :label="$calendar->text('view_'.$view)" :aria-current="$active ? 'page' : null" />
+                        <x-kore::button size="sm" :variant="$active ? 'outline' : 'ghost'" color="secondary" :class="$active ? 'kore-calendar-target' : 'kore-calendar-target text-kore-muted-fg hover:text-kore-fg'" :href="$link([$viewParam => $view])" :label="$calendar->text('view_'.$view)" :aria-current="$active ? 'page' : null" />
                     @endif
                 @endforeach
             </div>
@@ -88,7 +93,7 @@
                         x-data
                         x-on:change="location.href = $event.target.selectedOptions[0].dataset.href"
                     @endif
-                    class="kore-calendar-select kore-calendar-target block w-full rounded-kore-md border border-kore-input bg-kore-bg px-3 py-1.5 text-kore-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kore-ring"
+                    class="kore-calendar-select kore-calendar-target block w-full px-3 py-1.5 kore-control"
                 >
                     @foreach ($views as $view)
                         <option value="{{ $view }}" @selected($view === $current) @if ($mode !== 'livewire') data-href="{{ $link([$viewParam => $view]) }}" @endif>{{ $calendar->text('view_'.$view) }}</option>

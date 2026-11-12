@@ -46,11 +46,11 @@
     x-data="KoreCalendarTimeline({ live: {{ $virtual && $mode === 'livewire' ? 'true' : 'false' }}, scrollTo: {{ $scrollTo }} })"
     x-on:scroll.throttle.150ms="onScroll()"
     style="--kc-slots: {{ $slotCount }}"
-    {{ $attributes->class('kore-calendar-timeline w-full max-h-[44rem] overflow-auto rounded-kore-lg border border-kore-border bg-kore-bg text-kore-fg') }}
+    {{ $attributes->class('kore-calendar-timeline w-full max-h-[44rem] overflow-auto rounded-kore-lg border border-kore-border bg-kore-surface text-kore-fg shadow-kore-xs') }}
 >
-    <div role="rowgroup" class="sticky top-0 z-30 bg-kore-bg">
+    <div role="rowgroup" class="sticky top-0 z-30 bg-kore-surface">
         <div role="row" class="grid w-max min-w-full border-b border-kore-border" style="grid-template-columns: {{ $template }}">
-            <div role="columnheader" class="sticky start-0 z-10 border-e border-kore-border bg-kore-bg px-3 py-2 text-xs font-medium text-kore-muted-fg">{{ $calendar->text('resources') }}</div>
+            <div role="columnheader" class="sticky start-0 z-10 border-e border-kore-border bg-kore-surface px-3 py-2 text-xs font-medium text-kore-muted-fg">{{ $calendar->text('resources') }}</div>
             <div class="grid" style="grid-template-columns: repeat({{ $slotCount }}, minmax(0, 1fr))">
                 @foreach ($layout->slots as $slot)
                     <div
@@ -89,7 +89,9 @@
         @foreach ($layout->rows as $row)
             @if ($row['type'] === 'group')
                 <div role="row" wire:key="kore-timeline-{{ $row['key'] }}" class="grid w-max min-w-full border-b border-kore-border bg-kore-muted/40" style="grid-template-columns: {{ $template }}">
-                    <div role="rowheader" class="sticky start-0 z-10 bg-kore-muted px-2 py-1.5">
+                    {{-- z-[26]: por encima de la línea de «ahora» (z-index 25). Con z-10, al desplazar el timeline
+                         la línea roja se pintaba sobre el nombre del recurso en vez de pasar por debajo. --}}
+                    <div role="rowheader" class="sticky start-0 z-[26] bg-kore-muted px-2 py-1.5">
                         <button
                             type="button"
                             x-on:click="collapsed[{{ Js::from($row['key']) }}] = ! collapsed[{{ Js::from($row['key']) }}]"
@@ -112,7 +114,7 @@
                     class="grid w-max min-w-full border-b border-kore-border last:border-b-0"
                     style="grid-template-columns: {{ $template }}"
                 >
-                    <div role="rowheader" class="sticky start-0 z-10 flex items-center border-e border-kore-border bg-kore-bg py-1.5 pe-2 text-sm" style="padding-inline-start: calc(0.75rem + {{ $row['depth'] }} * 1rem)">
+                    <div role="rowheader" class="sticky start-0 z-[26] flex items-center border-e border-kore-border bg-kore-surface py-1.5 pe-2 text-sm" style="padding-inline-start: calc(0.75rem + {{ $row['depth'] }} * 1rem)">
                         @if ($row['resource']?->color)
                             <span class="kore-calendar-dot me-2 size-2 shrink-0 rounded-full" style="{{ \KoreUi\Calendar\View\EventColor::style($row['resource']->color) }}" aria-hidden="true"></span>
                         @endif

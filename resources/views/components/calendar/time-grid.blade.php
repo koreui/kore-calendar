@@ -54,10 +54,10 @@
     x-data="KoreCalendarGrid({ columns: {{ $count }} })"
     x-on:keydown="onKeydown($event)"
     style="--kc-min: calc(4rem + {{ $count }} * var(--kore-calendar-column-min)); --kc-slots: {{ count($layout->slots) }}; --kc-hour: {{ $layout->hourEvery() }}"
-    {{ $attributes->class('kore-calendar-time-grid max-h-[44rem] overflow-auto rounded-kore-lg border border-kore-border bg-kore-bg text-kore-fg') }}
+    {{ $attributes->class('kore-calendar-time-grid max-h-[44rem] overflow-auto rounded-kore-lg border border-kore-border bg-kore-surface text-kore-fg shadow-kore-xs') }}
 >
     {{-- Cabecera y todo el día: fijas arriba al hacer scroll por las horas --}}
-    <div class="sticky top-0 z-30 bg-kore-bg">
+    <div class="sticky top-0 z-30 bg-kore-surface">
     <div role="rowgroup" class="border-b border-kore-border">
         @if ($hasResources)
             <div role="row" class="grid min-w-[var(--kc-min)]" style="grid-template-columns: {{ $template }}">

@@ -37,11 +37,12 @@
     /* Días de relleno del mes (los de los meses vecinos): el número se pinta con este color y el fondo es un tinte suyo. */
     --kore-calendar-other-month: var(--kore-muted-fg);
     /*
-     * Horas no laborables. --kore-muted a secas (0,97 sobre un fondo de 1,0) casi no
-     * se ve en claro, así que se oscurece un poco con --kore-muted-fg; la transparencia
+     * Horas no laborables: un tinte de --kore-muted-fg sobre la superficie del calendario.
+     * Antes era una mezcla más opaca, calibrada para un fondo blanco puro; con la superficie
+     * de kore-ui 3 quedaba un bloque gris que pesaba más que los eventos. La transparencia
      * deja pasar las líneas de la rejilla y el tinte del día de hoy.
      */
-    --kore-calendar-non-business: color-mix(in oklch, color-mix(in oklch, var(--kore-muted-fg) 12%, var(--kore-muted)) 75%, transparent);
+    --kore-calendar-non-business: color-mix(in oklch, var(--kore-muted-fg) 9%, transparent);
 }
 
 /* En oscuro --kore-muted ya es más claro que el fondo: se usa tal cual. */
@@ -56,6 +57,11 @@
     --kore-calendar-other-month: var(--kore-muted-fg);
 }
 
+/*
+ * El fondo de un evento es su color mezclado con la superficie del calendario. La mezcla va
+ * en oklab, no en oklch: la superficie es un blanco con matiz 0, y en oklch la interpolación
+ * de matiz arrastraba todos los eventos hacia el rosa, fuera cual fuera su color.
+ */
 /* ── Eventos ───────────────────────────────────────────────────────────── */
 
 /*
@@ -66,13 +72,13 @@
  */
 .kore-calendar-event {
     --kc-color: var(--kore-event, var(--kore-primary));
-    background: color-mix(in oklch, var(--kc-color) 16%, var(--kore-bg));
+    background: color-mix(in oklab, var(--kc-color) 16%, var(--kore-surface));
     border-inline-start: 3px solid var(--kc-color);
     color: var(--kore-fg);
 }
 
 .kore-calendar-event:hover {
-    background: color-mix(in oklch, var(--kc-color) 24%, var(--kore-bg));
+    background: color-mix(in oklab, var(--kc-color) 24%, var(--kore-surface));
 }
 
 .kore-calendar-event:focus-visible {

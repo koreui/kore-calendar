@@ -22,6 +22,6 @@
     </div>
 
     <div class="flex justify-end">
-        <x-kore::button type="button" variant="ghost" color="secondary" wire:click="cancel" :label="$t('form_cancel')" />
+        <x-kore::button type="button" variant="outline" color="secondary" wire:click="cancel" :label="$t('form_cancel')" />
     </div>
 </div>

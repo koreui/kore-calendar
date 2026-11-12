@@ -63,9 +63,38 @@
         />
     @endif
 
-    <x-kore::select wire:model="color" :label="$t('form_color')" :options="$koreColors" :placeholder="$t('form_no_color')" clearable />
+    {{--
+        El color se elige viéndolo. Antes era un select con «Paleta 1… Paleta 8»: había que abrirlo
+        y probar para saber cuál era cuál. Son radios de verdad —un grupo, una parada del tabulador,
+        flechas para moverse— con el nombre de cada color para el lector de pantalla.
+    --}}
+    <fieldset class="flex flex-col gap-1.5">
+        <legend class="text-sm font-medium text-kore-fg">{{ $t('form_color') }}</legend>
 
-    <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
+        <div class="flex flex-wrap items-center gap-2">
+            <label class="relative inline-flex cursor-pointer" title="{{ $t('form_no_color') }}">
+                <input type="radio" class="peer sr-only" wire:model="color" value="" />
+                <span class="flex size-7 items-center justify-center rounded-full border border-kore-input bg-kore-surface text-kore-muted-fg ring-offset-2 ring-offset-kore-surface kore-transition peer-checked:ring-2 peer-checked:ring-kore-fg peer-focus-visible:ring-2 peer-focus-visible:ring-kore-ring" aria-hidden="true">
+                    <x-lucide-ban class="size-3.5" />
+                </span>
+                <span class="sr-only">{{ $t('form_no_color') }}</span>
+            </label>
+
+            @foreach ($koreColors as $option)
+                <label class="relative inline-flex cursor-pointer" title="{{ $option['label'] }}">
+                    <input type="radio" class="peer sr-only" wire:model="color" value="{{ $option['value'] }}" />
+                    <span class="block size-7 rounded-full border border-kore-border ring-offset-2 ring-offset-kore-surface kore-transition peer-checked:ring-2 peer-checked:ring-kore-fg peer-focus-visible:ring-2 peer-focus-visible:ring-kore-ring" style="background: {{ \KoreUi\Calendar\View\EventColor::css($option['value']) }}" aria-hidden="true"></span>
+                    <span class="sr-only">{{ $option['label'] }}</span>
+                </label>
+            @endforeach
+        </div>
+
+        @error('color')
+            <p class="text-sm text-kore-destructive-text" role="alert">{{ $message }}</p>
+        @enderror
+    </fieldset>
+
+    <div class="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-kore-border pt-4">
         <div>
             @if ($mode === 'edit')
                 <x-kore::button type="button" variant="ghost" color="destructive" wire:click="delete" :label="$t('form_delete')" />
@@ -73,7 +102,7 @@
         </div>
 
         <div class="flex gap-2">
-            <x-kore::button type="button" variant="ghost" color="secondary" wire:click="close" :label="$t('form_cancel')" />
+            <x-kore::button type="button" variant="outline" color="secondary" wire:click="close" :label="$t('form_cancel')" />
             <x-kore::button type="submit" wire:loading.attr="disabled" wire:target="save" :label="$t('form_save')" />
         </div>
     </div>
