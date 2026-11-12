@@ -45,7 +45,9 @@
         x-cloak
         x-kore-trap="open"
         x-on:click.outside="open = false"
-        class="absolute start-0 top-0 z-40 w-56 rounded-kore-lg border border-kore-border bg-kore-surface p-2 text-kore-surface-fg shadow-kore-lg"
+        {{-- kore-panel + kore-pop: el mismo panel flotante que un menú o un select de kore-ui, con su
+             entrada y salida. Se apagan con `data-kore-motion="off"` como el resto. --}}
+        class="kore-pop kore-panel absolute start-0 top-0 z-40 w-56 p-2"
     >
         <div class="mb-1.5 flex items-center justify-between gap-2">
             <span class="text-sm font-medium">{{ $label }}</span>
