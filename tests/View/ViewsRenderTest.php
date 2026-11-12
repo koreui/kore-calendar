@@ -4,6 +4,12 @@ use KoreUi\Calendar\Resources\ResourceSet;
 use KoreUi\Calendar\View\CalendarRenderer;
 use KoreUi\Calendar\View\CalendarSettings;
 
+// La fecha se fija: estas vistas pintan octubre de 2026 y varias comprueban que
+// «hoy» está marcado. Sin esto la suite solo pasaba mientras el reloj real seguía
+// en ese mes.
+beforeEach(fn () => \Carbon\CarbonImmutable::setTestNow('2026-10-16 10:00:00 UTC'));
+afterEach(fn () => \Carbon\CarbonImmutable::setTestNow());
+
 $render = function (string $view, array $events = [], ?ResourceSet $resources = null) {
     $calendar = CalendarRenderer::render(CalendarSettings::make(['view' => $view, 'date' => '2026-10-16', 'timezone' => 'UTC']), $events, $resources);
     $component = match ($view) {
