@@ -164,7 +164,7 @@ Dónde se pinta, siempre con elementos decorativos (`aria-hidden`: no se leen, l
 - **Mes**: los días sin ningún tramo se atenúan.
 - **Agenda**: nada.
 
-El color es el token `--kore-calendar-non-business`, derivado de `--kore-muted` y redefinido en oscuro; se puede sobrescribir como cualquier otro token.
+El color es el token `--kore-calendar-non-business`, un tinte de `--kore-muted-fg` en claro y de `--kore-muted` en oscuro; se puede sobrescribir como cualquier otro token.
 
 **Horario por recurso.** El `businessHours` de un recurso gana al del calendario para sus columnas o filas, con la misma forma. `false` (o `[]`) lo deja siempre abierto aunque el calendario tenga horario; `null` (por defecto) hereda el del calendario:
 

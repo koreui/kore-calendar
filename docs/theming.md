@@ -19,7 +19,7 @@ El calendario no trae colores propios: usa los tokens `--kore-*` de kore-ui (tem
 @source '../../vendor/kore-ui/calendar/src/**/*.php';
 ```
 
-Los `@source` hacen falta porque las vistas del paquete usan clases de Tailwind (`bg-kore-bg`, `border-kore-border`, `text-kore-muted-fg`…). Sin ellos Tailwind no las genera y la rejilla sale sin estilo.
+Los `@source` hacen falta porque las vistas del paquete usan clases de Tailwind (`bg-kore-surface`, `border-kore-border`, `text-kore-muted-fg`…). Sin ellos Tailwind no las genera y la rejilla sale sin estilo.
 
 ## Tokens del calendario
 
@@ -39,7 +39,7 @@ Declarados en `:root` por `kore-calendar.css`. Los de tamaño son un valor; los 
 | `--kore-calendar-today` | `color-mix(in oklch, var(--kore-primary) 8%, transparent)` | Fondo del día actual |
 | `--kore-calendar-now` | `var(--kore-destructive)` | Línea y punto del indicador de «ahora» |
 | `--kore-calendar-other-month` | `var(--kore-muted-fg)` | Días de relleno de la vista mes (los de los meses vecinos): el color de su número, y su celda se tiñe con un 5 % de este color. Un solo token para las dos cosas, en claro y en oscuro. El día de hoy y los días deshabilitados conservan su propio fondo |
-| `--kore-calendar-non-business` | claro: `color-mix(in oklch, color-mix(in oklch, var(--kore-muted-fg) 12%, var(--kore-muted)) 75%, transparent)` · oscuro: `color-mix(in oklch, var(--kore-muted) 85%, transparent)` | Fondo de las horas y días que no son laborables |
+| `--kore-calendar-non-business` | claro: `color-mix(in oklch, var(--kore-muted-fg) 9%, transparent)` · oscuro: `color-mix(in oklch, var(--kore-muted) 85%, transparent)` | Fondo de las horas y días que no son laborables |
 
 Los `--kc-*` (`--kc-top`, `--kc-span`…) son posiciones que calcula PHP para cada evento. No son API: no los toques. Tampoco `--kc-resource-col`, la columna de recursos que resuelve el CSS entre `--kore-calendar-resource-width` y su variante `-narrow`: cambia esas dos.
 
@@ -91,7 +91,7 @@ Un evento sin color y sin recurso con color usa `--kore-event` si algún ancestr
 El calendario no tiene lógica de tema: sigue a kore-ui, que activa el oscuro con la clase `.dark` o el atributo `data-theme="dark"` en `<html>` (el interruptor de tema y su store están en la documentación de kore-ui, carpeta `theme`).
 
 - Casi todo cambia solo porque los tokens `--kore-*` cambian.
-- `--kore-calendar-non-business` se redefine en `.dark` y `[data-theme='dark']`: en claro `--kore-muted` es casi igual que el fondo y se oscurece con `--kore-muted-fg`; en oscuro `--kore-muted` ya es más claro que el fondo y se usa tal cual.
+- `--kore-calendar-non-business` se redefine en `.dark` y `[data-theme='dark']`: en claro es un tinte de `--kore-muted-fg` sobre la superficie del calendario; en oscuro `--kore-muted` ya es más claro que el fondo y se usa tal cual.
 - `--kore-calendar-other-month` también se declara en ese bloque, con el mismo valor que en `:root`, para que se resuelva con el `--kore-muted-fg` del tema oscuro aunque el oscuro esté en un contenedor.
 - **Los tokens se calculan en `:root`.** Con `.dark` en `<html>` no hay nada que hacer. Si activas el oscuro en un contenedor y no en `<html>`, `--kore-calendar-today` y `--kore-calendar-now` ya llegan resueltos con los valores claros: redefínelos dentro del contenedor.
 
