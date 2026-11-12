@@ -45,7 +45,7 @@
         x-cloak
         x-kore-trap="open"
         x-on:click.outside="open = false"
-        class="absolute start-0 top-0 z-40 w-56 rounded-kore-lg border border-kore-border bg-kore-surface p-2 text-kore-surface-fg shadow-lg"
+        class="absolute start-0 top-0 z-40 w-56 rounded-kore-lg border border-kore-border bg-kore-surface p-2 text-kore-surface-fg shadow-kore-lg"
     >
         <div class="mb-1.5 flex items-center justify-between gap-2">
             <span class="text-sm font-medium">{{ $label }}</span>

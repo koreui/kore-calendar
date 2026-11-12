@@ -462,6 +462,7 @@
 
 @media (prefers-reduced-motion: no-preference) {
     .kore-calendar-event {
-        transition: background-color 120ms ease;
+        /* Los tokens de movimiento de kore-ui 3: `data-kore-motion="off"` los pone a cero. */
+        transition: background-color var(--kore-duration-fast, 120ms) var(--kore-ease-out, ease);
     }
 }

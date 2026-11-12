@@ -7,6 +7,16 @@ y el proyecto usa [Semantic Versioning](https://semver.org/lang/es/).
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **Requiere kore-ui `^3.0`.** El popover de «+N más» usa la sombra por token (`shadow-kore-lg`) y la transición de los eventos lee los tokens de movimiento, así que `data-kore-motion="off"` también la apaga.
+
+### Fixed
+
+- **`ViewsRenderTest` dependía de la fecha real**: pintaba octubre de 2026 y esperaba ver «hoy» marcado, y dejó de pasar al cambiar de mes. Ahora fija la fecha.
+
 ## [0.1.0] — 2026-10-16
 
 ### Added
