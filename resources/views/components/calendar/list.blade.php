@@ -21,7 +21,7 @@
                             'bg-kore-muted/50 px-4 py-1.5 text-sm font-medium',
                             'text-kore-primary-text' => $day['isToday'],
                         ])
-                    >{{ $calendar->format($day['date'], 'day_header_long') }}</h3>
+                    >{{ \Illuminate\Support\Str::ucfirst($calendar->format($day['date'], 'day_header_long')) }}</h3>
 
                     <ul>
                         @foreach ($day['items'] as $item)

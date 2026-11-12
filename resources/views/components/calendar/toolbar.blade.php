@@ -84,7 +84,9 @@
                 @endforeach
             </div>
 
-            <div class="min-w-0 flex-1 @2xl:hidden">
+            {{-- `appearance-none` y flecha propia: el <select> nativo de iOS ignora la altura,
+                 así que medía la mitad que los botones de al lado. --}}
+            <div class="relative min-w-0 flex-1 @2xl:hidden">
                 <select
                     aria-label="{{ $calendar->text('views') }}"
                     @if ($mode === 'livewire')
@@ -93,12 +95,13 @@
                         x-data
                         x-on:change="location.href = $event.target.selectedOptions[0].dataset.href"
                     @endif
-                    class="kore-calendar-select kore-calendar-target block w-full px-3 py-1.5 kore-control"
+                    class="kore-calendar-select kore-calendar-target block w-full appearance-none truncate py-1.5 ps-2.5 pe-7 kore-control"
                 >
                     @foreach ($views as $view)
                         <option value="{{ $view }}" @selected($view === $current) @if ($mode !== 'livewire') data-href="{{ $link([$viewParam => $view]) }}" @endif>{{ $calendar->text('view_'.$view) }}</option>
                     @endforeach
                 </select>
+                <x-lucide-chevrons-up-down class="pointer-events-none absolute end-2 top-1/2 size-4 -translate-y-1/2 text-kore-muted-fg" aria-hidden="true" />
             </div>
         @endif
     </div>

@@ -2,6 +2,7 @@
 
 namespace KoreUi\Calendar\View;
 
+use Illuminate\Support\Str;
 use KoreUi\Calendar\Events\EventInstance;
 use KoreUi\Calendar\Interaction\Messages;
 use KoreUi\Calendar\Layout\ListLayout;
@@ -128,13 +129,15 @@ final class RenderedCalendar
         $current = $this->range->current;
         $last = $current->end->addDays(-1);
 
-        return match ($this->range->unit) {
+        // Mayúscula inicial: el título es un encabezado, y en español la fecha larga empieza
+        // por el día de la semana en minúscula («jueves, 12 de noviembre de 2026»).
+        return Str::ucfirst(match ($this->range->unit) {
             'month' => mb_convert_case($this->format($current->start, 'title_month'), MB_CASE_TITLE),
             'day' => $this->format($current->start, 'title_day'),
             // Mismo mes: «12 – 18 oct 2026»; si cruza de mes: «28 sept – 4 oct 2026».
             default => ($current->start->month() === $last->month() ? $this->format($current->start, 'D') : $this->format($current->start, 'title_week_start'))
                 .' – '.$this->format($last, 'title_week_end'),
-        };
+        });
     }
 
     /** Un texto de interfaz en el idioma de este calendario (`Messages` lo resuelve, con los overrides del config). */

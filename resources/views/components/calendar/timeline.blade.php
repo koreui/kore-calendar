@@ -97,7 +97,7 @@
                             x-on:click="collapsed[{{ Js::from($row['key']) }}] = ! collapsed[{{ Js::from($row['key']) }}]"
                             x-bind:aria-expanded="! collapsed[{{ Js::from($row['key']) }}]"
                             aria-label="{{ $calendar->text('toggle_group', ['group' => $row['label']]) }}"
-                            class="kore-calendar-target flex max-w-full items-center gap-1.5 rounded-kore-sm px-1 text-xs font-semibold hover:bg-kore-muted focus-visible:outline-2 focus-visible:outline-kore-ring"
+                            class="kore-calendar-target flex max-w-full items-center gap-1.5 rounded-kore-sm px-1 text-xs font-semibold hover:bg-kore-muted kore-calendar-focus"
                         >
                             <x-lucide-chevron-down class="size-3.5 shrink-0 transition-transform" x-bind:class="collapsed[{{ Js::from($row['key']) }}] && '-rotate-90'" aria-hidden="true" />
                             <span class="min-w-0 truncate" title="{{ $row['label'] }}">{{ $row['label'] }}</span>
@@ -142,7 +142,8 @@
                                     class="kore-calendar-timeline-slot"
                                     style="--kc-left: {{ $item['left'] }}; --kc-width: {{ $item['width'] }}; --kc-level: {{ $item['level'] }}"
                                 >
-                                    <x-kore::calendar.event :calendar="$calendar" :instance="$item['instance']" :is-start="$item['isStart']" :is-end="$item['isEnd']" class="h-full" />
+                                    <x-kore::calendar.event :calendar="$calendar" :instance="$item['instance']" :is-start="$item['isStart']" :is-end="$item['isEnd']" class="h-full"
+                                        :title="($item['instance']->allDay ? '' : $calendar->time($item['instance']->range->start).' ').$item['instance']->event->title" />
                                 </li>
                             @endforeach
                         </ul>

@@ -34,7 +34,7 @@
         aria-haspopup="dialog"
         aria-controls="{{ $id }}"
         aria-label="{{ $calendar->text('more_label', ['count' => $count, 'date' => $label]) }}"
-        class="kore-calendar-hit w-full rounded-kore-sm px-1.5 text-left text-xs font-medium text-kore-muted-fg hover:bg-kore-muted hover:text-kore-fg focus-visible:outline-2 focus-visible:outline-kore-ring"
+        class="kore-calendar-hit w-full rounded-kore-sm px-1.5 text-left text-xs font-medium text-kore-muted-fg hover:bg-kore-muted hover:text-kore-fg kore-calendar-focus"
     >{{ $calendar->text('more', ['count' => $count]) }}</button>
 
     <div
@@ -50,8 +50,8 @@
         class="kore-pop kore-panel absolute start-0 top-0 z-40 w-56 p-2"
     >
         <div class="mb-1.5 flex items-center justify-between gap-2">
-            <span class="text-sm font-medium">{{ $label }}</span>
-            <button type="button" x-on:click="open = false; $nextTick(() => $refs.trigger.focus())" aria-label="{{ $calendar->text('close') }}" class="kore-calendar-target inline-flex items-center justify-center rounded-kore-sm p-0.5 text-kore-muted-fg hover:bg-kore-muted hover:text-kore-fg focus-visible:outline-2 focus-visible:outline-kore-ring">
+            <span class="text-sm font-medium">{{ \Illuminate\Support\Str::ucfirst($label) }}</span>
+            <button type="button" x-on:click="open = false; $nextTick(() => $refs.trigger.focus())" aria-label="{{ $calendar->text('close') }}" class="kore-calendar-target inline-flex items-center justify-center rounded-kore-sm p-0.5 text-kore-muted-fg hover:bg-kore-muted hover:text-kore-fg kore-calendar-focus">
                 <x-lucide-x class="size-4" aria-hidden="true" />
             </button>
         </div>

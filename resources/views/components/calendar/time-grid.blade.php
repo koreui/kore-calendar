@@ -42,6 +42,10 @@
             }
         }
     }
+
+    // Con una sola fecha en pantalla (día, o recursos · día) teñir «hoy» pinta la rejilla
+    // entera de azul y no distingue nada: el día ya lo dice el título.
+    $singleDay = collect($columns)->unique(fn ($c) => $c['date']->ts)->count() === 1;
 @endphp
 
 @assets
@@ -54,7 +58,7 @@
     x-data="KoreCalendarGrid({ columns: {{ $count }} })"
     x-on:keydown="onKeydown($event)"
     style="--kc-min: calc(4rem + {{ $count }} * var(--kore-calendar-column-min)); --kc-slots: {{ count($layout->slots) }}; --kc-hour: {{ $layout->hourEvery() }}"
-    {{ $attributes->class('kore-calendar-time-grid max-h-[44rem] overflow-auto rounded-kore-lg border border-kore-border bg-kore-surface text-kore-fg shadow-kore-xs') }}
+    {{ $attributes->class(($singleDay ? 'kore-calendar-single-day ' : '').'kore-calendar-time-grid max-h-[44rem] overflow-auto rounded-kore-lg border border-kore-border bg-kore-surface text-kore-fg shadow-kore-xs') }}
 >
     {{-- Cabecera y todo el día: fijas arriba al hacer scroll por las horas --}}
     <div class="sticky top-0 z-30 bg-kore-surface">
@@ -63,8 +67,12 @@
             <div role="row" class="grid min-w-[var(--kc-min)]" style="grid-template-columns: {{ $template }}">
                 <div role="columnheader" aria-hidden="true"></div>
                 @foreach ($groups as $g)
-                    <div role="columnheader" class="truncate border-l border-kore-border px-2 py-1.5 text-center text-sm font-medium" style="grid-column: span {{ $g['span'] }}">
-                        {{ $datesAbove ? $calendar->format($g['column']['date'], 'day_header') : $g['column']['resource']->title }}
+                    {{-- La etiqueta es `sticky` por los dos lados: en una semana por recurso la
+                         cabecera abarca siete columnas y, centrada sin más, en un móvil quedaba
+                         fuera de la pantalla — se veía «Sala Ámb» cortado o nada. Por eso, cuando
+                         abarca varias, va al principio y se queda pegada mientras se desplaza. --}}
+                    <div role="columnheader" @class(['flex min-w-0 border-l border-kore-border px-2 py-1.5 text-sm font-medium', 'justify-center' => $g['span'] === 1]) style="grid-column: span {{ $g['span'] }}">
+                        <span class="kore-calendar-sticky-label truncate">{{ $datesAbove ? $calendar->format($g['column']['date'], 'day_header') : $g['column']['resource']->title }}</span>
                     </div>
                 @endforeach
             </div>
@@ -81,7 +89,7 @@
                     tabindex="{{ $i === $focusIndex ? '0' : '-1' }}"
                     @if ($c['isToday']) aria-current="date" @endif
                     @class([
-                        'kore-calendar-hit truncate border-l border-kore-border px-2 py-1.5 text-center text-xs focus-visible:outline-2 focus-visible:outline-kore-ring',
+                        'kore-calendar-hit truncate border-l border-kore-border px-2 py-1.5 text-center text-xs kore-calendar-focus',
                         'font-semibold text-kore-primary-text' => $c['isToday'],
                         'text-kore-muted-fg' => ! $c['isToday'],
                     ])

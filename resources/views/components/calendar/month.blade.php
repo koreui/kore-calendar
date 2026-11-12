@@ -87,7 +87,7 @@
                         <div
                             data-kore-calendar-cell="{{ $r * $columns + $c }}"
                             tabindex="{{ $r * $columns + $c === $focusIndex ? '0' : '-1' }}"
-                            class="kore-calendar-hit flex justify-end px-1.5 pt-1 text-xs focus-visible:outline-2 focus-visible:outline-kore-ring"
+                            class="kore-calendar-hit flex justify-end px-1.5 pt-1 text-xs kore-calendar-focus"
                         >
                             <span class="sr-only">{{ $calendar->format($cell['date'], 'day_header_long') }}</span>
                             <span
