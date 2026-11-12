@@ -7,7 +7,7 @@ y el proyecto usa [Semantic Versioning](https://semver.org/lang/es/).
 
 ---
 
-## [Unreleased]
+## [0.2.0] — 2026-11-12
 
 ### Changed
 
@@ -15,6 +15,7 @@ y el proyecto usa [Semantic Versioning](https://semver.org/lang/es/).
 
 - **Rediseño sobre la superficie de kore-ui 3.** El calendario se pinta sobre `--kore-surface` con la sombra corta de un campo, en vez de sobre el fondo de página. Las horas y días no laborables son un tinte ligero (`--kore-calendar-non-business` cambia de valor) en lugar de un bloque gris. Las cabeceras de día van sin mayúsculas.
 - **La barra elige vista con un control segmentado**, no con nueve botones sueltos: la vista activa ya no es un botón primario sólido que competía con las acciones de la página. Las flechas y «Hoy» usan el botón neutro.
+- **El popover de «+N más» usa el panel y la animación de kore-ui** (`kore-panel`, `kore-pop`), y se apaga con `data-kore-motion="off"`.
 - **El color de un evento se elige viéndolo.** El formulario cambia el select de «Paleta 1… Paleta 8» por un grupo de muestras (radios, con el nombre de cada color para el lector de pantalla). «Cancelar» pasa a botón con contorno.
 
 ### Fixed
