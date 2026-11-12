@@ -357,6 +357,20 @@ Los fallos salen como motivo en un toast de error; los éxitos, en uno de éxito
 | `scope_question` | `:title` | Pregunta del diálogo |
 | `scope_this`, `scope_following`, `scope_all` | | Botones de alcance |
 
+### El formulario de evento y los textos de kore-ui
+
+El formulario de evento usa componentes de kore-ui (fecha, hora, select). Sus textos propios
+—«Mes anterior», «Limpiar», «Subir la hora»— no son del calendario: salen de kore-ui, que de
+fábrica los tiene en español. En una aplicación en inglés, para que no se mezclen:
+
+```php
+// config/kore-ui.php (kore-ui 3.1 o superior)
+'locale' => 'auto',
+```
+
+Los errores y avisos de importar un `.ics` sí son del calendario y siguen su idioma: son las
+claves `ical_*` (ver [iCalendar](ical.md#errores-y-avisos)).
+
 ## Ver también
 
 - [Calendar](getting-started.md): eventos, recursos, recurrencia y horario laboral.
