@@ -112,6 +112,15 @@ final class ICalReader
      */
     public function read(string $ics, array $options = []): array
     {
+        return ICalText::during(fn () => $this->readNow($ics, $options));
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     * @return list<CalendarEvent>
+     */
+    private function readNow(string $ics, array $options): array
+    {
         $o = $this->options($options);
         $this->errors = $this->warnings = [];
         $this->errorCount = $this->warningCount = 0;

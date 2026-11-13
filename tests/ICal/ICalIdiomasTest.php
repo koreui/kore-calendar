@@ -81,3 +81,33 @@ it('src/ICal no lleva mensajes escritos a mano para quien importa', function () 
 
     expect($problemas)->toBe([], "Mensajes escritos a mano en src/ICal:\n".implode("\n", $problemas));
 });
+
+it('un cambio de idioma entre dos lecturas se ve en la segunda', function () {
+    // Las plantillas se memorizan mientras dura una lectura, no más: si la memoria
+    // sobreviviera, la segunda lectura saldría en el idioma de la primera.
+    $ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nsin dos puntos\r\nEND:VCALENDAR\r\n";
+    $reader = new \KoreUi\Calendar\ICal\ICalReader;
+
+    config()->set('kore-calendar.locale', 'es');
+    $reader->read($ics);
+    $enEspanol = $reader->warnings()[0];
+
+    config()->set('kore-calendar.locale', 'en');
+    $reader->read($ics);
+    $enIngles = $reader->warnings()[0];
+
+    expect($enEspanol)->toStartWith('Línea 3:')
+        ->and($enIngles)->toStartWith('Line 3:');
+});
+
+it('un texto sobrescrito entre dos lecturas también', function () {
+    $ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nsin dos puntos\r\nEND:VCALENDAR\r\n";
+    $reader = new \KoreUi\Calendar\ICal\ICalReader;
+
+    config()->set('kore-calendar.locale', 'es');
+    $reader->read($ics);
+    config()->set('kore-calendar.translations', ['ical_line_invalid' => 'Renglón :line roto']);
+    $reader->read($ics);
+
+    expect($reader->warnings()[0])->toBe('Renglón 3 roto');
+});
